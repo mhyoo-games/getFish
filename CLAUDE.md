@@ -1,6 +1,6 @@
 # 이 저장소에서 작업할 때 지킬 것
 
-getFish — 타이밍 맞춰 눌러서 물고기를 낚는 2D 웹 낚시 게임. 조직 mhyoo-games, 주소 `https://mhyoo-games.github.io/getfish/`. 사용자는 한국어로 대화합니다.
+getFish — 타이밍 맞춰 눌러서 물고기를 낚는 2D 웹 낚시 게임. 조직 mhyoo-games, 주소 `https://mhyoo-games.github.io/getFish/`. 사용자는 한국어로 대화합니다.
 
 - 빌드 없는 정적 페이지: `index.html` + `js/` (ES 모듈) + `css/`. 그림은 전부 canvas로 직접 그림(`js/draw.js`, 수채화 그림책 느낌). 그림 파일은 Kenney 입력 아이콘(`assets/input`, CC0)만.
 - 데이터는 `js/data.js` 하나: 스테이지, 물고기(크기·등급·생김새 look), 장비(낚싯대·줄·찌·모자·옷·장신구, stats), 미끼, 드랍(DROPS), 도감 세트(SETS). 물고기·장비를 더하면 `tests/data.test.mjs`가 모양을 검사한다(드랍 전용은 DROPS에, 세트 보상은 SETS에 꼭 있어야 함).
