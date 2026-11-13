@@ -8,7 +8,7 @@ function shade(hex, k) {   // k>0 밝게, k<0 어둡게
   if (k > 0) { r += (255 - r) * k; g += (255 - g) * k; b += (255 - b) * k; } else { r *= 1 + k; g *= 1 + k; b *= 1 + k; }
   return `rgb(${r | 0},${g | 0},${b | 0})`;
 }
-const OUT = 'rgba(58,34,30,.72)';   // 갈색 먹선 (수채화 그림책 느낌)
+const OUT = 'rgba(66,36,30,.62)';   // 갈색 먹선 (수채화 그림책 느낌)
 
 // ---------------------------------------------------------------- 물고기
 /** 물고기 그리기: (x,y) 가운데, 길이 L, 오른쪽을 봄 (flip이면 왼쪽). t: 헤엄 흔들림.
@@ -36,32 +36,40 @@ export function fishSprite(f, L0) {
   const q = 2, Wc = Math.ceil(L * 1.6 * q), Hc = Math.ceil(L * 1.5 * q);   // 높은 지느러미·해파리 다리까지 들어가게
   const mk = () => { const c = document.createElement('canvas'); c.width = Wc; c.height = Hc; return c; };
   const base = mk(), b = base.getContext('2d'); b.translate(Wc / 2, Hc / 2); b.scale(q, q); rawFish(b, f, L, {});
-  const lk = f.look, R = rng(f.id + 'paint');
+  const lk = f.look; const paint = paintify(base, [lk.c1, lk.c2, lk.c3 || lk.c1], L * q, f.id);
+  const out = { c: paint, L, q }; SPR.set(key, out); return out;
+}
+/** 수채화 그림책 칠하기 (물고기·캐릭터 공통). base: 벡터로 그린 캔버스, cols: 주요 색, U: 크기 기준(px)
+ *  따뜻한 햇빛(왼쪽 위) · 차가운 반사광(아래) · 물감 번짐 · 붓 자국 · 종이 결 · 가장자리 물감 고임 · 테두리 빛 */
+export function paintify(base, cols, U, seed) {
+  const Wc = base.width, Hc = base.height, R = rng(seed + 'paint');
+  const mk = () => { const c = document.createElement('canvas'); c.width = Wc; c.height = Hc; return c; };
   const paint = mk(), p = paint.getContext('2d'); p.drawImage(base, 0, 0);
   p.globalCompositeOperation = 'source-atop';
-  // 빛(왼쪽 위)과 그늘(오른쪽 아래)
-  let g = p.createRadialGradient(Wc * 0.42, Hc * 0.3, 0, Wc * 0.42, Hc * 0.3, Wc * 0.55); g.addColorStop(0, 'rgba(255,248,225,.5)'); g.addColorStop(0.55, 'rgba(255,248,225,0)'); p.fillStyle = g; p.fillRect(0, 0, Wc, Hc);
-  g = p.createLinearGradient(0, Hc * 0.35, 0, Hc); g.addColorStop(0, 'rgba(40,20,70,0)'); g.addColorStop(0.55, 'rgba(60,25,80,.08)'); g.addColorStop(1, 'rgba(50,20,80,.42)'); p.fillStyle = g; p.fillRect(0, 0, Wc, Hc);
-  // 붓 자국 (몸 결을 따라 가로로 짧게)
-  const cols = [lk.c1, lk.c2, lk.c3 || lk.c1].map(c => [shade(c, 0.35), shade(c, -0.25)]).flat();
-  for (let i = 0; i < 160; i++) {
-    const x0 = R() * Wc, y0 = R() * Hc, len = (0.05 + R() * 0.12) * L * q, ang = (R() - 0.5) * 0.5;
-    p.strokeStyle = cols[i % cols.length]; p.globalAlpha = 0.06 + R() * 0.1; p.lineWidth = (0.008 + R() * 0.022) * L * q; p.lineCap = 'round';
+  // 물감 번짐: 같은 계열 색이 군데군데 진하게·옅게
+  for (let i = 0; i < 14; i++) { const c = cols[i % cols.length], x = R() * Wc, y = R() * Hc, r = U * (0.08 + R() * 0.18), g = p.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, i % 2 ? shade(c, 0.35) : shade(c, -0.18)); g.addColorStop(1, 'rgba(0,0,0,0)'); p.globalAlpha = 0.22; p.fillStyle = g; p.fillRect(x - r, y - r, r * 2, r * 2); }
+  p.globalAlpha = 1;
+  // 따뜻한 햇빛과 보랏빛 그늘
+  let g = p.createRadialGradient(Wc * 0.4, Hc * 0.28, 0, Wc * 0.4, Hc * 0.28, Math.max(Wc, Hc) * 0.55); g.addColorStop(0, 'rgba(255,240,205,.5)'); g.addColorStop(0.55, 'rgba(255,240,205,0)'); p.fillStyle = g; p.fillRect(0, 0, Wc, Hc);
+  g = p.createLinearGradient(0, Hc * 0.35, 0, Hc); g.addColorStop(0, 'rgba(60,25,90,0)'); g.addColorStop(0.6, 'rgba(70,30,100,.1)'); g.addColorStop(1, 'rgba(60,25,95,.34)'); p.fillStyle = g; p.fillRect(0, 0, Wc, Hc);
+  // 붓 자국
+  const bc = cols.map(c => [shade(c, 0.4), shade(c, -0.3)]).flat();
+  for (let i = 0; i < 190; i++) {
+    const x0 = R() * Wc, y0 = R() * Hc, len = (0.04 + R() * 0.1) * U, ang = (R() - 0.5) * 0.7;
+    p.strokeStyle = bc[i % bc.length]; p.globalAlpha = 0.05 + R() * 0.11; p.lineWidth = (0.006 + R() * 0.02) * U; p.lineCap = 'round';
     p.beginPath(); p.moveTo(x0, y0); p.quadraticCurveTo(x0 + Math.cos(ang) * len * 0.5, y0 + Math.sin(ang) * len * 0.5 - len * 0.12, x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len); p.stroke();
   }
   p.globalAlpha = 1;
-  // 종이 결
-  p.globalCompositeOperation = 'multiply'; p.globalAlpha = 0.35; const pat = p.createPattern(grain(), 'repeat'); p.fillStyle = pat; p.fillRect(0, 0, Wc, Hc); p.globalAlpha = 1;
-  p.globalCompositeOperation = 'destination-in'; p.drawImage(base, 0, 0);   // 몸 바깥은 지움
-  // 가장자리 물감 고임 (수채화 테두리): 몸 - 흐린 몸 = 가장자리 띠
-  const edge = mk(), e = edge.getContext('2d'); e.drawImage(base, 0, 0); e.globalCompositeOperation = 'destination-out'; e.filter = `blur(${Math.max(2, L * q * 0.012)}px)`; e.drawImage(base, 0, 0); e.filter = 'none';
-  e.globalCompositeOperation = 'source-in'; e.fillStyle = shade(lk.c1, -0.45); e.fillRect(0, 0, Wc, Hc);
-  p.globalCompositeOperation = 'source-over'; p.globalAlpha = 0.45; p.drawImage(edge, 0, 0); p.globalAlpha = 1;
-  // 위쪽 테두리 빛 (몸 - 아래로 민 몸)
-  const rim = mk(), r = rim.getContext('2d'); r.drawImage(base, 0, 0); r.globalCompositeOperation = 'destination-out'; r.drawImage(base, 0, L * q * 0.018);
-  r.globalCompositeOperation = 'source-in'; r.fillStyle = 'rgba(255,252,240,1)'; r.fillRect(0, 0, Wc, Hc);
-  p.globalAlpha = 0.5; p.drawImage(rim, 0, 0); p.globalAlpha = 1;
-  const out = { c: paint, L, q }; SPR.set(key, out); return out;
+  p.globalCompositeOperation = 'multiply'; p.globalAlpha = 0.24; p.fillStyle = p.createPattern(grain(), 'repeat'); p.fillRect(0, 0, Wc, Hc); p.globalAlpha = 1;
+  p.globalCompositeOperation = 'destination-in'; p.drawImage(base, 0, 0);
+  const ring = (dx, dy, blur, color, alpha) => {   // 몸 - (밀거나 흐린) 몸 = 가장자리 띠
+    const c = mk(), e = c.getContext('2d'); e.drawImage(base, 0, 0); e.globalCompositeOperation = 'destination-out'; if (blur) e.filter = `blur(${blur}px)`; e.drawImage(base, dx, dy); e.filter = 'none';
+    e.globalCompositeOperation = 'source-in'; e.fillStyle = color; e.fillRect(0, 0, Wc, Hc); p.globalCompositeOperation = 'source-over'; p.globalAlpha = alpha; p.drawImage(c, 0, 0); p.globalAlpha = 1; };
+  ring(0, 0, Math.max(2, U * 0.012), shade(cols[0], -0.5), 0.42);   // 가장자리 물감 고임
+  ring(0, U * 0.016, 0, '#FFE9B8', 0.55);                            // 위쪽: 따뜻한 햇빛 테두리
+  ring(0, -U * 0.014, 0, '#9ED6FF', 0.4);                            // 아래쪽: 바다에서 오는 차가운 반사광
+  return paint;
 }
 /** 벡터 원본 (스프라이트를 만들 때만 씀) */
 function rawFish(ctx, f, L, o = {}) {
@@ -363,11 +371,25 @@ function liveScene(ctx, W, H, st, t, o) {
 // ---------------------------------------------------------------- 낚시꾼 (뒷모습) + 아바타
 /** 배 위에서 바다를 보는 뒷모습. pose: 'idle'|'cast'|'pull'. 낚싯대 끝 좌표를 돌려줘요 */
 export function drawAngler(ctx, x, y, s, av, pose, t, items) {
+  // 낚싯대(앞쪽이라 몸에 가려짐)를 먼저, 수채화로 칠해 둔 몸을 그 위에
+  const tip = rawAngler(ctx, x, y, s, av, pose, t, items, 'rod');
+  const S0 = s <= 200 ? 200 : 400, key = ['back', av.animal.id, av.hat, av.outfit, av.acc, S0].join(':');
+  let sp = SPR.get(key);
+  if (!sp) { const q = 2, c = document.createElement('canvas'); c.width = S0 * 1.1 * q; c.height = S0 * 1.25 * q; const b = c.getContext('2d'); b.scale(q, q); rawAngler(b, S0 * 0.55, S0 * 1.15, S0, av, 'idle', 0, items, 'body');
+    sp = { c: paintify(c, [av.animal.fur, items[av.outfit].color, items[av.hat].color], S0 * q, key), S0, q }; SPR.set(key, sp); }
+  const k = s / sp.S0, bob = Math.sin(t * 2) * s * 0.01;
+  ctx.drawImage(sp.c, x - S0x(sp) * k, y + bob - sp.S0 * 1.15 * k, sp.c.width / sp.q * k, sp.c.height / sp.q * k);
+  return tip;
+}
+const S0x = sp => sp.S0 * 0.55;
+function rawAngler(ctx, x, y, s, av, pose, t, items, mode) {
+  const BODY = mode !== 'rod', ROD = mode !== 'body';
   const A = av.animal, hat = items[av.hat], outfit = items[av.outfit], acc = items[av.acc], rod = items[av.rod];
   ctx.save(); ctx.translate(x, y); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const bob = Math.sin(t * 2) * s * 0.01, pull = pose === 'pull' ? Math.sin(t * 18) * 0.04 : 0;
-  const rodA = pose === 'cast' ? -2.2 : pose === 'pull' ? -1.05 + pull : -1.25;   // 낚싯대 각도 (위로)
+  const rodA = pose === 'cast' ? -2.2 : pose === 'pull' ? -1.05 + pull : pose === 'cheer' ? -1.75 + Math.sin(t * 10) * 0.05 : -1.25;   // 낚싯대 각도 (위로)
   ctx.lineWidth = s * 0.02; ctx.strokeStyle = OUT;
+  if (BODY) {
   // 그림자
   ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0, s * 0.02, s * 0.32, s * 0.06, 0, 0, TAU); ctx.fill();
   // 다리
@@ -392,15 +414,19 @@ export function drawAngler(ctx, x, y, s, av, pose, t, items) {
   if (acc.id === 'acc5') { ctx.save(); ctx.translate(-s * 0.02, -s * 0.28); ctx.rotate(-0.5); drawFish(ctx, { id: 'doll', look: { shape: 'fish', c1: '#7AC2F2', c2: '#E8F6FF', c3: '#F28AA0', pat: 'none' } }, 0, 0, s * 0.3); ctx.restore(); ctx.strokeStyle = '#8A6A44'; ctx.beginPath(); ctx.moveTo(-s * 0.1, -s * 0.42); ctx.lineTo(-s * 0.02, -s * 0.2); ctx.moveTo(s * 0.1, -s * 0.42); ctx.lineTo(s * 0.04, -s * 0.3); ctx.stroke(); ctx.strokeStyle = OUT; }
   if (acc.id === 'acc2' || acc.id === 'acc4') { ctx.strokeStyle = '#8A6A44'; ctx.lineWidth = s * 0.008; ctx.beginPath(); ctx.arc(0, -s * 0.47, s * 0.11, 0.2, Math.PI - 0.2); ctx.stroke(); ctx.lineWidth = s * 0.02; ctx.strokeStyle = OUT; if (acc.id === 'acc4') { ctx.save(); ctx.shadowColor = acc.color; ctx.shadowBlur = s * 0.08; ctx.fillStyle = acc.color; ctx.beginPath(); ctx.arc(s * 0.1, -s * 0.4, s * 0.03, 0, TAU); ctx.fill(); ctx.restore(); } }
   if (acc.id === 'acc3') { ctx.fillStyle = acc.color; for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.arc(s * 0.1 + Math.cos(i * 1.57) * s * 0.022, -s * 0.3 + Math.sin(i * 1.57) * s * 0.022, s * 0.02, 0, TAU); ctx.fill(); } }
-  // 팔 + 낚싯대
-  const hx = s * 0.02, hy = -s * 0.36;
   ctx.fillStyle = A.fur; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.ellipse(sx * s * 0.16, -s * 0.33, s * 0.05, s * 0.09, sx * 0.6, 0, TAU); ctx.fill(); ctx.stroke(); }
+  }
+  // 낚싯대
+  const hx = s * 0.02, hy = -s * 0.36;
   const rl = s * 1.15, tipX = hx + Math.cos(rodA) * rl, tipY = hy + Math.sin(rodA) * rl;
+  if (ROD) {
   ctx.strokeStyle = shade(rod.color, -0.35); ctx.lineWidth = s * 0.035; ctx.beginPath(); ctx.moveTo(hx - Math.cos(rodA) * s * 0.15, hy - Math.sin(rodA) * s * 0.15); ctx.lineTo(hx, hy); ctx.stroke();
   ctx.strokeStyle = rod.color; ctx.lineWidth = s * 0.022; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo(hx + Math.cos(rodA) * rl * 0.6, hy + Math.sin(rodA) * rl * 0.6 + (pose === 'pull' ? s * 0.12 : 0), tipX, tipY + (pose === 'pull' ? s * 0.1 : 0)); ctx.stroke();
   if (rod.id === 'rod8') { ctx.save(); ctx.shadowColor = '#9AF2FF'; ctx.shadowBlur = s * 0.1; ctx.fillStyle = '#9AF2FF'; ctx.beginPath(); ctx.arc(tipX, tipY + (pose === 'pull' ? s * 0.1 : 0), s * 0.025, 0, TAU); ctx.fill(); ctx.restore(); }
   ctx.fillStyle = '#5A5A60'; ctx.beginPath(); ctx.arc(hx - Math.cos(rodA) * s * 0.05 + s * 0.03, hy - Math.sin(rodA) * s * 0.05, s * 0.035, 0, TAU); ctx.fill();
+  }
   ctx.lineWidth = s * 0.02; ctx.strokeStyle = OUT;
+  if (BODY) {
   // 머리 (뒤통수)
   const head = -s * 0.62;
   ctx.fillStyle = A.fur;
@@ -415,6 +441,7 @@ export function drawAngler(ctx, x, y, s, av, pose, t, items) {
   if (acc.id === 'acc1') { ctx.strokeStyle = '#2E2E34'; ctx.lineWidth = s * 0.012; ctx.beginPath(); ctx.moveTo(-s * 0.2, head + s * 0.01); ctx.quadraticCurveTo(0, head + s * 0.05, s * 0.2, head + s * 0.01); ctx.stroke(); ctx.lineWidth = s * 0.02; ctx.strokeStyle = OUT; }
   // 모자
   drawHat(ctx, hat, 0, head - s * 0.1, s, t);
+  }
   ctx.restore();
   return { x: x + tipX, y: y + bob + tipY + (pose === 'pull' ? s * 0.1 : 0) };
 }
@@ -430,6 +457,13 @@ export function drawHat(ctx, hat, x, y, s, t = 0) {
 }
 /** 아바타 미리보기 (앞모습, 꾸미기 화면용) */
 export function drawAvatarFront(ctx, x, y, s, av, items, t = 0) {
+  const S0 = 300, key = ['front', av.animal.id, av.hat, av.outfit, av.acc].join(':');
+  let sp = SPR.get(key);
+  if (!sp) { const q = 2, c = document.createElement('canvas'); c.width = S0 * 1.0 * q; c.height = S0 * 1.25 * q; const b = c.getContext('2d'); b.scale(q, q); rawAvatarFront(b, S0 * 0.5, S0 * 1.15, S0, av, items, 0);
+    sp = { c: paintify(c, [av.animal.fur, items[av.outfit].color, items[av.hat].color], S0 * q, key), q }; SPR.set(key, sp); }
+  const k = s / S0; ctx.drawImage(sp.c, x - S0 * 0.5 * k, y - S0 * 1.15 * k + Math.sin(t * 2) * s * 0.01, sp.c.width / sp.q * k, sp.c.height / sp.q * k);
+}
+function rawAvatarFront(ctx, x, y, s, av, items, t = 0) {
   const A = av.animal, hat = items[av.hat], outfit = items[av.outfit], acc = items[av.acc];
   ctx.save(); ctx.translate(x, y + Math.sin(t * 2) * s * 0.01); ctx.lineWidth = s * 0.02; ctx.strokeStyle = OUT; ctx.lineJoin = 'round';
   ctx.fillStyle = 'rgba(0,0,0,.15)'; ctx.beginPath(); ctx.ellipse(0, s * 0.02, s * 0.3, s * 0.05, 0, 0, TAU); ctx.fill();

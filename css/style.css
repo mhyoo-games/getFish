@@ -96,3 +96,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
   .item .how small { max-width: 120px; }
 }
 @media (max-width: 720px) { #sheetTabs { order: 3; flex-basis: 100%; } .card > header { padding: 12px 12px 6px; } #sheetBody { padding: 4px 10px 12px; } }
+
+#btnAct.press { animation: pressBtn .14s ease-out; }
+@keyframes pressBtn { 0% { transform: scale(.88) translateY(4px); } 100% { transform: scale(1); } }
+.resultCard { animation: popIn .32s cubic-bezier(.2,1.6,.4,1); }
+@keyframes popIn { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
