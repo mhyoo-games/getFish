@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8"><title>물고기 그림 모아 보기</title>
+<body style="margin:0;background:#2a6a8a"><canvas id="c"></canvas>
+<script type="module">
+// 물고기 52종 그림을 한 장에 모아 보는 확인용 페이지 (게임에는 안 쓰임)
+import { FISH, ITEM_BY_ID, ANIMALS } from '../js/data.js';
+import { drawFish, drawAngler, drawAvatarFront } from '../js/draw.js';
+const C = 8, cw = 220, ch = 150, c = document.getElementById('c'), R = Math.ceil(FISH.length / C) + 2;
+c.width = C * cw; c.height = R * ch; const x = c.getContext('2d');
+FISH.forEach((f, i) => { const cx = (i % C) * cw, cy = Math.floor(i / C) * ch;
+  x.fillStyle = i % 2 ? '#3E86A8' : '#3A7EA0'; x.fillRect(cx, cy, cw, ch);
+  drawFish(x, f, cx + cw / 2, cy + ch / 2 - 8, f.tier === 'boss' ? 180 : 150, { t: 0.3 });
+  x.fillStyle = '#fff'; x.font = 'bold 14px sans-serif'; x.textAlign = 'center'; x.fillText(f.id + ' ' + f.name, cx + cw / 2, cy + ch - 10); });
+const y0 = Math.ceil(FISH.length / C) * ch;
+const items = ITEM_BY_ID;
+ANIMALS.forEach((a, i) => { const av = { animal: a, hat: ['hat1','hat2','hat3','hat4','hat5'][i], outfit: ['outfit1','outfit2','outfit3','outfit4','outfit5'][i], acc: ['acc1','acc2','acc3','acc4','acc5'][i], rod: ['rod1','rod3','rod6','rod8','rod9'][i] };
+  drawAngler(x, 120 + i * 300, y0 + 2 * ch - 20, 160, av, i % 2 ? 'pull' : 'idle', 1, items);
+  drawAvatarFront(x, 230 + i * 300, y0 + 2 * ch - 20, 130, av, items, 0); });
+window.__ok = 1;
+</script>

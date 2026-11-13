@@ -1,0 +1,44 @@
+name: 검사 후 GitHub Pages 배포
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 데이터 검사 (물고기 50종 이상, 장비 얻는 방법 등)
+        run: node tests/data.test.mjs
+      - name: 규칙 검사 (등급, 싸움, 보스 난이도, 상점, 도감 세트)
+        run: node tests/logic.test.mjs
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 파일 주소에 버전 붙이기 (예전 캐시가 섞이지 않게)
+        run: sed -i "s/__V__/${GITHUB_SHA::8}/g" index.html && grep -c "v=${GITHUB_SHA::8}" index.html
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
