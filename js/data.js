@@ -102,36 +102,37 @@ for (const [st, list] of Object.entries(RAW)) for (const f of list) {
 export const FISH_BY_ID = Object.fromEntries(FISH.map(f => [f.id, f]));
 
 // ---------------------------------------------------------------- 장비 · 아바타 · 미끼
-// stats: pow 한 번 맞힐 때 힘 · crit 금빛 과녁이 나올 확률 · heart 줄 버팀(하트) · time 싸움 시간(초)
+// stats: far 멀리 던지기(힘 게이지의 좋은 구간이 넓어지고, 멀리 던질수록 드문 물고기가 더 와요)
+//        pow 한 번 맞힐 때 힘 · crit 금빛 과녁이 나올 확률 · heart 줄 버팀(하트) · time 싸움 시간(초)
 //        slow 물고기 움직임 느리게(비율) · zone 과녁 넓게(비율) · luck 큰 물고기·드랍 운 · coin 동전 더 받기(비율)
 // shop: 상점 가격 (없으면 상점에 없음) · drop: 드랍으로만 얻음 (어디서 나오는지는 DROPS)
 const I = (id, slot, name, stats, o = {}) => ({ id, slot, name, stats, ...o });
 export const ITEMS = [
   // 낚싯대
   I('rod1', 'rod', '대나무 낚싯대', { pow: 10, crit: 0.05 }, { start: true, desc: '할아버지가 주신 낡은 대나무 낚싯대.', color: '#C8A25A' }),
-  I('rod2', 'rod', '유리섬유 낚싯대', { pow: 16, crit: 0.06 }, { shop: 600, desc: '가볍고 잘 휘는 초보자용 낚싯대.', color: '#6FB0E8' }),
-  I('rod3', 'rod', '카본 낚싯대', { pow: 24, crit: 0.08 }, { shop: 2400, desc: '단단하고 가벼운 검은 낚싯대.', color: '#3A3E48' }),
-  I('rod4', 'rod', '산호 가지 낚싯대', { pow: 30, crit: 0.12 }, { drop: true, desc: '산호초에서 건진 분홍 가지로 만든 낚싯대.', color: '#F08CA0' }),
-  I('rod5', 'rod', '티타늄 낚싯대', { pow: 38, crit: 0.1 }, { shop: 9000, desc: '아무리 큰 물고기도 버티는 금속 낚싯대.', color: '#A8B2BE' }),
-  I('rod6', 'rod', '수염 영감의 지팡이', { pow: 22, crit: 0.15, luck: 0.05 }, { drop: true, desc: '수염 영감이 아끼던 나무 지팡이. 운이 따라요.', color: '#8A6A44' }),
-  I('rod7', 'rod', '서리 송곳니 낚싯대', { pow: 48, crit: 0.14 }, { drop: true, desc: '서리왕의 송곳니로 끝을 단 차가운 낚싯대.', color: '#9FD2F2' }),
-  I('rod8', 'rod', '심연 등불대', { pow: 60, crit: 0.18, luck: 0.08 }, { drop: true, desc: '끝에 작은 등불이 달린 낚싯대. 어둠 속 물고기를 불러요.', color: '#6A5A9A' }),
-  I('rod9', 'rod', '황금 낚싯대', { pow: 45, crit: 0.1, coin: 0.2 }, { shop: 30000, desc: '번쩍이는 황금 낚싯대. 동전이 더 들어와요.', color: '#F2C23A' }),
+  I('rod2', 'rod', '유리섬유 낚싯대', { pow: 16, crit: 0.06, far: 0.05 }, { shop: 600, desc: '가볍고 잘 휘는 초보자용 낚싯대.', color: '#6FB0E8' }),
+  I('rod3', 'rod', '카본 낚싯대', { pow: 24, crit: 0.08, far: 0.08 }, { shop: 2400, desc: '단단하고 가벼운 검은 낚싯대.', color: '#3A3E48' }),
+  I('rod4', 'rod', '산호 가지 낚싯대', { pow: 30, crit: 0.12, far: 0.1 }, { drop: true, desc: '산호초에서 건진 분홍 가지로 만든 낚싯대.', color: '#F08CA0' }),
+  I('rod5', 'rod', '티타늄 낚싯대', { pow: 38, crit: 0.1, far: 0.1 }, { shop: 9000, desc: '아무리 큰 물고기도 버티는 금속 낚싯대.', color: '#A8B2BE' }),
+  I('rod6', 'rod', '수염 영감의 지팡이', { pow: 22, crit: 0.15, luck: 0.05, far: 0.1 }, { drop: true, desc: '수염 영감이 아끼던 나무 지팡이. 운이 따라요.', color: '#8A6A44' }),
+  I('rod7', 'rod', '서리 송곳니 낚싯대', { pow: 48, crit: 0.14, far: 0.12 }, { drop: true, desc: '서리왕의 송곳니로 끝을 단 차가운 낚싯대.', color: '#9FD2F2' }),
+  I('rod8', 'rod', '심연 등불대', { pow: 60, crit: 0.18, luck: 0.08, far: 0.15 }, { drop: true, desc: '끝에 작은 등불이 달린 낚싯대. 어둠 속 물고기를 불러요.', color: '#6A5A9A' }),
+  I('rod9', 'rod', '황금 낚싯대', { pow: 45, crit: 0.1, coin: 0.2, far: 0.1 }, { shop: 30000, desc: '번쩍이는 황금 낚싯대. 동전이 더 들어와요.', color: '#F2C23A' }),
   // 줄
   I('line1', 'line', '무명실', { heart: 3, time: 20 }, { start: true, desc: '집에 있던 실. 금방 끊어질 것 같아요.', color: '#E8E2D2' }),
   I('line2', 'line', '나일론 줄', { heart: 4, time: 22 }, { shop: 500, desc: '흔히 쓰는 투명한 낚싯줄.', color: '#CFE6F2' }),
-  I('line3', 'line', '합사 줄', { heart: 5, time: 24 }, { shop: 2000, desc: '여러 가닥을 꼬아 만든 튼튼한 줄.', color: '#7AC27A' }),
-  I('line4', 'line', '강철 와이어', { heart: 6, time: 26, pow: 3 }, { shop: 8000, desc: '이빨 센 물고기도 못 끊는 금속 줄.', color: '#9AA6B2' }),
-  I('line5', 'line', '인어 머리카락 줄', { heart: 7, time: 30, slow: 0.05 }, { drop: true, desc: '물속에서 반짝이는 신비한 줄. 물고기가 순해져요.', color: '#B88AE8' }),
+  I('line3', 'line', '합사 줄', { heart: 5, time: 24, far: 0.05 }, { shop: 2000, desc: '여러 가닥을 꼬아 만든 튼튼한 줄.', color: '#7AC27A' }),
+  I('line4', 'line', '강철 와이어', { heart: 6, time: 26, pow: 3, far: 0.05 }, { shop: 8000, desc: '이빨 센 물고기도 못 끊는 금속 줄.', color: '#9AA6B2' }),
+  I('line5', 'line', '인어 머리카락 줄', { heart: 7, time: 30, slow: 0.05, far: 0.08 }, { drop: true, desc: '물속에서 반짝이는 신비한 줄. 물고기가 순해져요.', color: '#B88AE8' }),
   // 찌
   I('float1', 'float', '나무 찌', { slow: 0, zone: 0 }, { start: true, desc: '나무를 깎아 만든 찌.', color: '#C8865A' }),
-  I('float2', 'float', '깃털 찌', { slow: 0.08, zone: 0.05 }, { shop: 400, desc: '작은 입질도 잘 보이는 가벼운 찌.', color: '#F2E2C2' }),
-  I('float3', 'float', '형광 찌', { slow: 0.12, zone: 0.1 }, { shop: 1800, desc: '물 위에서 밝게 빛나 타이밍을 잡기 쉬워요.', color: '#C8F25A' }),
-  I('float4', 'float', '오뚝이 찌', { slow: 0.18, zone: 0.12 }, { shop: 7000, desc: '물고기가 당겨도 금방 바로 서는 찌.', color: '#F26A5A' }),
-  I('float5', 'float', '달빛 찌', { slow: 0.25, zone: 0.18, luck: 0.05 }, { drop: true, desc: '심해에서 건진 은은한 달빛 찌.', color: '#E8EEFF' }),
+  I('float2', 'float', '깃털 찌', { slow: 0.08, zone: 0.05, far: 0.05 }, { shop: 400, desc: '작은 입질도 잘 보이는 가벼운 찌.', color: '#F2E2C2' }),
+  I('float3', 'float', '형광 찌', { slow: 0.12, zone: 0.1, far: 0.08 }, { shop: 1800, desc: '물 위에서 밝게 빛나 타이밍을 잡기 쉬워요.', color: '#C8F25A' }),
+  I('float4', 'float', '오뚝이 찌', { slow: 0.18, zone: 0.12, far: 0.06 }, { shop: 7000, desc: '물고기가 당겨도 금방 바로 서는 찌.', color: '#F26A5A' }),
+  I('float5', 'float', '달빛 찌', { slow: 0.25, zone: 0.18, luck: 0.05, far: 0.12 }, { drop: true, desc: '심해에서 건진 은은한 달빛 찌.', color: '#E8EEFF' }),
   // 모자
   I('hat1', 'hat', '밀짚모자', {}, { start: true, desc: '햇빛을 가려 주는 밀짚모자.', color: '#E8C870' }),
-  I('hat2', 'hat', '선장 모자', { coin: 0.1 }, { shop: 1500, desc: '배 위의 주인공은 나. 동전이 더 들어와요.', color: '#2E3A5A' }),
+  I('hat2', 'hat', '선장 모자', { coin: 0.1, far: 0.03 }, { shop: 1500, desc: '배 위의 주인공은 나. 동전이 더 들어와요.', color: '#2E3A5A' }),
   I('hat3', 'hat', '방울 털모자', { time: 3 }, { shop: 3000, desc: '따뜻해서 오래 버틸 수 있어요.', color: '#E85A5A' }),
   I('hat4', 'hat', '해적 두건', { crit: 0.05 }, { drop: true, desc: '산호초 난파선에서 나온 두건.', color: '#2E2E34' }),
   I('hat5', 'hat', '별 고깔모자', { luck: 0.06 }, { set: true, desc: '도감 세트 보상. 별이 운을 불러요.', color: '#7A6AE0' }),
@@ -217,3 +218,32 @@ export const ANIMALS = [
 
 export const START = { coins: 300, items: { rod1: 1, line1: 1, float1: 1, hat1: 1, outfit1: 1, acc0: 1, bait1: 20 }, eq: { rod: 'rod1', line: 'line1', float: 'float1', hat: 'hat1', outfit: 'outfit1', acc: 'acc0', bait: 'bait1' } };
 export const BAG_MAX = 40;
+
+// ---------------------------------------------------------------- 레벨 · 칭호
+// 경험치: 물고기 등급 × 바다 × 크기 등급 (+ 새 도감 보너스). 레벨이 오르면 동전과 작은 능력치(힘·하트)가 붙어요.
+export const LEVEL = { max: 50, need: lv => Math.round(80 * Math.pow(lv, 1.5)), exp: { c: 10, u: 20, r: 45, e: 100, boss: 400 }, grade: { C: 1, B: 1.2, A: 1.5, S: 2, SS: 3 }, newDex: 30 };
+// 칭호: 조건을 채우면 얻고, 하나를 골라 달아요(단 칭호의 효과만 들어가요).
+// cond: level 레벨 · dex 도감 수 · bosses 잡은 보스 종류 · ss SS 등급 종류 · caught 잡은 수 · nice 나이스 캐스팅 수 · stage 그 바다 도감 전부
+export const TITLES = [
+  { id: 't_new', name: '새내기 낚시꾼', cond: { level: 1 }, stats: {}, desc: '처음 낚싯대를 잡았어요.' },
+  { id: 't_lv5', name: '바닷바람 친구', cond: { level: 5 }, stats: { time: 1 }, desc: '레벨 5' },
+  { id: 't_lv10', name: '능숙한 낚시꾼', cond: { level: 10 }, stats: { pow: 2 }, desc: '레벨 10' },
+  { id: 't_lv20', name: '바다의 단골', cond: { level: 20 }, stats: { crit: 0.03 }, desc: '레벨 20' },
+  { id: 't_lv30', name: '물결을 읽는 자', cond: { level: 30 }, stats: { slow: 0.04 }, desc: '레벨 30' },
+  { id: 't_lv40', name: '전설의 낚시꾼', cond: { level: 40 }, stats: { pow: 6, luck: 0.03 }, desc: '레벨 40' },
+  { id: 't_lv50', name: '바다의 주인', cond: { level: 50 }, stats: { pow: 8, luck: 0.05, coin: 0.05 }, desc: '레벨 50' },
+  { id: 't_dex10', name: '도감 수집가', cond: { dex: 10 }, stats: { coin: 0.03 }, desc: '도감 10종' },
+  { id: 't_dex26', name: '물고기 박사', cond: { dex: 26 }, stats: { luck: 0.03 }, desc: '도감 26종 (절반)' },
+  { id: 't_dex52', name: '살아 있는 도감', cond: { dex: 52 }, stats: { luck: 0.06, coin: 0.06 }, desc: '도감 52종 전부' },
+  { id: 't_pier', name: '선착장 지킴이', cond: { stage: 1 }, stats: { heart: 1 }, desc: '햇살 선착장 도감 전부' },
+  { id: 't_reef', name: '산호초 탐험가', cond: { stage: 2 }, stats: { zone: 0.04 }, desc: '산호초 바다 도감 전부' },
+  { id: 't_fjord', name: '안개 속 사냥꾼', cond: { stage: 3 }, stats: { time: 2 }, desc: '안개 협만 도감 전부' },
+  { id: 't_deep', name: '심해의 등불', cond: { stage: 4 }, stats: { far: 0.06 }, desc: '심해 해구 도감 전부' },
+  { id: 't_boss1', name: '보스 사냥꾼', cond: { bosses: 1 }, stats: { pow: 1 }, desc: '보스 1마리' },
+  { id: 't_boss4', name: '네 바다의 왕', cond: { bosses: 4 }, stats: { pow: 4, crit: 0.03 }, desc: '보스 4마리 모두' },
+  { id: 't_ss1', name: '대물 사냥꾼', cond: { ss: 1 }, stats: { luck: 0.02 }, desc: 'SS 등급 1종' },
+  { id: 't_ss10', name: '월척 장인', cond: { ss: 10 }, stats: { luck: 0.05 }, desc: 'SS 등급 10종' },
+  { id: 't_c100', name: '부지런한 손', cond: { caught: 100 }, stats: { coin: 0.04 }, desc: '물고기 100마리' },
+  { id: 't_c500', name: '쉬지 않는 낚싯대', cond: { caught: 500 }, stats: { pow: 3 }, desc: '물고기 500마리' },
+  { id: 't_nice30', name: '명품 캐스터', cond: { nice: 30 }, stats: { far: 0.05 }, desc: '나이스 캐스팅 30번' },
+];

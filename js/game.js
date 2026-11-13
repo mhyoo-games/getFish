@@ -1,5 +1,5 @@
 // getFish 규칙 (화면과 상관없는 순수 계산) — tests/logic.test.mjs 에서 그대로 불러 검사해요.
-import { STAGES, TIERS, GRADES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, DROPS, SETS, START, BAG_MAX } from './data.js';
+import { STAGES, TIERS, GRADES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, DROPS, SETS, START, BAG_MAX, LEVEL, TITLES } from './data.js';
 
 export const SAVE_KEY = 'getfish_save_v1';
 export const EQ_SLOTS = ['rod', 'line', 'float', 'hat', 'outfit', 'acc'];
@@ -7,34 +7,50 @@ export const EQ_SLOTS = ['rod', 'line', 'float', 'hat', 'outfit', 'acc'];
 // ---------------------------------------------------------------- 저장
 export function newSave() {
   return { v: 1, coins: START.coins, items: { ...START.items }, eq: { ...START.eq }, animal: 'hamster', stage: 1, unlocked: 1,
-    dex: {}, sets: {}, bag: [], stats: { casts: 0, caught: 0, escaped: 0, bosses: 0, coinsEarned: 0 }, seen: {} };
+    dex: {}, sets: {}, bag: [], stats: { casts: 0, caught: 0, escaped: 0, bosses: 0, coinsEarned: 0, nice: 0 }, seen: {}, lv: 1, exp: 0, titles: { t_new: 1 }, title: 't_new' };
 }
 export function fixSave(s) {
   const d = newSave(); if (!s || typeof s !== 'object') return d;
   const o = { ...d, ...s, items: { ...d.items, ...(s.items || {}) }, eq: { ...d.eq, ...(s.eq || {}) }, stats: { ...d.stats, ...(s.stats || {}) } };
   for (const k of EQ_SLOTS) if (!ITEM_BY_ID[o.eq[k]] || !o.items[o.eq[k]]) o.eq[k] = d.eq[k];   // 없어진 장비는 기본으로
   if (!BAIT_BY_ID[o.eq.bait]) o.eq.bait = 'bait0';
+  o.titles = { t_new: 1, ...(s.titles || {}) }; if (!TITLE_BY_ID[o.title] || !o.titles[o.title]) o.title = 't_new'; o.lv = Math.max(1, Math.min(LEVEL.max, o.lv | 0)); o.exp = Math.max(0, +o.exp || 0);
   o.bag = (o.bag || []).filter(b => FISH_BY_ID[b.id]); o.unlocked = Math.max(1, Math.min(STAGES.length, o.unlocked | 0)); o.stage = Math.max(1, Math.min(o.unlocked, o.stage | 0));
   return o;
 }
 
 // ---------------------------------------------------------------- 능력치
 export function stats(save) {
-  const t = { pow: 0, crit: 0, heart: 0, time: 0, slow: 0, zone: 0, luck: 0, coin: 0 };
+  const t = { pow: 0, crit: 0, heart: 0, time: 0, slow: 0, zone: 0, luck: 0, coin: 0, far: 0 };
   for (const k of EQ_SLOTS) { const it = ITEM_BY_ID[save.eq[k]]; if (!it) continue; for (const [s, v] of Object.entries(it.stats)) t[s] += v; }
-  t.slow = Math.min(0.5, t.slow); t.zone = Math.min(0.6, t.zone); t.crit = Math.min(0.6, t.crit); t.luck = Math.min(0.5, t.luck);
+  const tt = TITLE_BY_ID[save.title]; if (tt) for (const [s, v] of Object.entries(tt.stats)) t[s] += v;   // 단 칭호
+  t.pow += Math.floor((save.lv || 1) / 2); t.heart += Math.floor((save.lv || 1) / 15);                  // 레벨: 2레벨마다 힘 +1, 15레벨마다 하트 +1
+  t.slow = Math.min(0.5, t.slow); t.zone = Math.min(0.6, t.zone); t.crit = Math.min(0.6, t.crit); t.luck = Math.min(0.5, t.luck); t.far = Math.min(0.5, t.far);
   return t;
 }
-export const STAT_NAMES = { pow: '힘', crit: '금빛 과녁', heart: '줄 버팀', time: '시간', slow: '느리게', zone: '과녁 넓게', luck: '행운', coin: '동전' };
-export function fmtStat(k, v) { return ['crit', 'slow', 'zone', 'luck', 'coin'].includes(k) ? `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%` : k === 'time' ? `${v >= 0 ? '+' : ''}${v}초` : `${v >= 0 ? '+' : ''}${v}`; }
+export const STAT_NAMES = { far: '멀리 던지기', pow: '힘', crit: '금빛 과녁', heart: '줄 버팀', time: '시간', slow: '느리게', zone: '과녁 넓게', luck: '행운', coin: '동전' };
+export function fmtStat(k, v) { return ['crit', 'slow', 'zone', 'luck', 'coin', 'far'].includes(k) ? `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%` : k === 'time' ? `${v >= 0 ? '+' : ''}${v}초` : `${v >= 0 ? '+' : ''}${v}`; }
+
+// ---------------------------------------------------------------- 던지기 (힘 게이지)
+// 게이지가 오르내리는 동안 눌러서 던져요. 끝(오른쪽) 가까이 '좋은 구간'에서 멈추면 '나이스 캐스팅'.
+// 멀리 던질수록 드문 물고기가 더 오고, 장비의 '멀리 던지기'가 좋은 구간을 넓히고 효과를 키워요.
+export const CAST = { speed: 1.15, sweet: 0.12 };
+export function castGauge(t) { const u = (t * CAST.speed) % 2; return u < 1 ? u : 2 - u; }   // 0 → 1 → 0 …
+export function castResult(power, st) {
+  const sweet = CAST.sweet + st.far * 0.3, nice = power >= 1 - sweet;
+  const bonus = power * (0.6 + st.far * 2) + (nice ? 0.35 : 0);     // 드문 물고기 배율에 쓰임
+  const dist = Math.round(8 + power * 32 * (1 + st.far));             // 화면에 보여 주는 비거리(m)
+  return { power, nice, bonus: +bonus.toFixed(3), dist, sweet, timeBonus: nice ? 2 : 0, luck: power * 0.06 + (nice ? 0.04 : 0) };
+}
 
 // ---------------------------------------------------------------- 물고기 뽑기
 /** 이 바다에서 어떤 물고기가 물지. rnd: 0~1 난수 함수 */
-export function rollFish(stage, baitId, luck, rnd = Math.random) {
+export function rollFish(stage, baitId, luck, rnd = Math.random, cast = 0) {
   const bait = BAIT_BY_ID[baitId] || BAITS[0];
   if (bait.boss) return FISH_BY_ID[STAGES[stage - 1].boss];
   const pool = FISH.filter(f => f.stage === stage && f.tier !== 'boss');
-  const ws = pool.map(f => TIERS[f.tier].w * (bait.w[f.tier] ?? 1) * (f.tier === 'c' ? 1 : 1 + luck * 2));
+  const castK = { c: 0, u: 0.5, r: 1, e: 1.5 };   // 멀리 던질수록 드문 물고기 쪽으로
+  const ws = pool.map(f => TIERS[f.tier].w * (bait.w[f.tier] ?? 1) * (f.tier === 'c' ? 1 : 1 + luck * 2) * (1 + cast * castK[f.tier]));
   let r = rnd() * ws.reduce((a, b) => a + b, 0);
   for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) return pool[i]; }
   return pool[pool.length - 1];
@@ -50,11 +66,11 @@ export const GRADE_BY = Object.fromEntries(GRADES.map(g => [g.g, g]));
 
 // ---------------------------------------------------------------- 싸움 (타이밍 맞춰 누르기)
 // 줄(레인) 0~1 위에 과녁 몇 개, 물고기 표시가 왔다 갔다 해요. 표시가 과녁 위에 있을 때 누르면 체력이 깎여요.
-export const LANE = { targets: 5, baseW: 0.065, baseSpeed: 0.42, perfect: 0.38, respawn: 0.55 };
-export function newBattle(fish, roll, st, rnd = Math.random) {
+export const LANE = { targets: 5, baseW: 0.055, baseSpeed: 0.42, perfect: 0.38, respawn: 0.55 };
+export function newBattle(fish, roll, st, rnd = Math.random, extraTime = 0) {
   const g = roll.grade, hp = Math.round(fish.hp * g.hp);
   const speed = LANE.baseSpeed * fish.spd * g.spd * (1 - st.slow);
-  const b = { fish, roll, hp, maxHp: hp, hearts: Math.max(1, st.heart), maxHearts: Math.max(1, st.heart), time: Math.max(8, st.time + (fish.tier === 'boss' ? 10 : 0)), maxTime: 0,
+  const b = { fish, roll, hp, maxHp: hp, hearts: Math.max(1, st.heart), maxHearts: Math.max(1, st.heart), time: Math.max(8, st.time + extraTime + (fish.tier === 'boss' ? 10 : 0)), maxTime: 0,
     x: rnd(), dir: rnd() < 0.5 ? -1 : 1, speed, w: LANE.baseW * (1 + st.zone), targets: [], hits: 0, perfects: 0, misses: 0, t: 0, turnT: 1 + rnd() * 2, done: null, st };
   b.maxTime = b.time;
   for (let i = 0; i < LANE.targets; i++) b.targets.push(newTarget(b, i, rnd));
@@ -119,6 +135,8 @@ export function onCatch(save, fish, roll, st, rnd = Math.random) {
     if (rnd() < ch) { give(save, dr.item, dr.n); res.drops.push({ item: dr.item, n: dr.n }); }
   }
   res.sets = checkSets(save);
+  res.exp = expFor(fish, roll.grade, res.newDex); res.levelUps = addExp(save, res.exp);
+  res.titles = checkTitles(save);
   return res;
 }
 export function give(save, id, n = 1) { save.items[id] = (save.items[id] || 0) + n; }
@@ -141,6 +159,30 @@ export function checkSets(save) {
 export function setProgress(save, s) {
   if (s.grade) return [Math.min(s.count, Object.values(save.dex).filter(d => GRADES.findIndex(x => x.g === d.best) >= GRADES.findIndex(x => x.g === s.grade)).length), s.count];
   return [s.fish.filter(id => save.dex[id]).length, s.fish.length];
+}
+
+// ---------------------------------------------------------------- 레벨 · 칭호
+export const TITLE_BY_ID = Object.fromEntries(TITLES.map(t => [t.id, t]));
+export function expFor(fish, grade, newDex) { return Math.round(LEVEL.exp[fish.tier] * (1 + (fish.stage - 1) * 0.8) * LEVEL.grade[grade.g] + (newDex ? LEVEL.newDex : 0)); }
+/** 경험치를 더하고 오른 레벨 목록을 돌려줘요. 레벨이 오르면 동전(레벨 × 100) */
+export function addExp(save, n) {
+  const ups = []; save.exp += n;
+  while (save.lv < LEVEL.max && save.exp >= LEVEL.need(save.lv)) { save.exp -= LEVEL.need(save.lv); save.lv++; save.coins += save.lv * 100; ups.push(save.lv); }
+  if (save.lv >= LEVEL.max) save.exp = Math.min(save.exp, LEVEL.need(LEVEL.max));
+  return ups;
+}
+export function titleValue(save, c) {
+  const k = Object.keys(c)[0], v = c[k], dexN = Object.keys(save.dex).length;
+  const have = k === 'level' ? save.lv : k === 'dex' ? dexN : k === 'bosses' ? FISH.filter(f => f.tier === 'boss' && save.dex[f.id]).length
+    : k === 'ss' ? Object.values(save.dex).filter(d => d.best === 'SS').length : k === 'caught' ? save.stats.caught : k === 'nice' ? (save.stats.nice || 0)
+    : k === 'stage' ? (FISH.filter(f => f.stage === v).every(f => save.dex[f.id]) ? 1 : 0) : 0;
+  return [have, k === 'stage' ? 1 : v];
+}
+/** 새로 얻은 칭호 목록 */
+export function checkTitles(save) {
+  const out = [];
+  for (const t of TITLES) { if (save.titles[t.id]) continue; const [h, n] = titleValue(save, t.cond); if (h >= n) { save.titles[t.id] = Date.now(); out.push(t); } }
+  return out;
 }
 
 // ---------------------------------------------------------------- 상점 · 가방
@@ -171,4 +213,5 @@ export function useBait(save) {
   return id;
 }
 export function dexCount(save) { return [FISH.filter(f => save.dex[f.id]).length, FISH.length]; }
+export { LEVEL, TITLES };
 export { STAGES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS };

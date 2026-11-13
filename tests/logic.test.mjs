@@ -58,3 +58,22 @@ if (process.env.TABLE) {
   for (const [n, eq] of Object.entries(gear)) { const sv = G.newSave(); for (const v of Object.values(eq)) sv.items[v] = 1; Object.assign(sv.eq, eq);
     console.log(n.padEnd(5), ['p01', 'p11', 'p13', 'r01', 'r12', 'r13', 'f01', 'f12', 'f13', 'd01', 'd11', 'd13'].map(id => id + ':' + play(sv, id, 0.8, 60).toFixed(2)).join(' ')); }
 }
+// 던지기: 멀리·나이스 캐스팅일수록 드문 물고기가 더 오고, '멀리 던지기' 장비가 좋은 구간을 넓혀요
+{ const st0 = G.stats(G.newSave()), near = G.castResult(0.2, st0), far = G.castResult(0.97, st0);
+  assert.ok(far.nice && !near.nice && far.bonus > near.bonus && far.dist > near.dist && far.timeBonus > 0);
+  const cnt = c => { let n = 0; for (let i = 0; i < 6000; i++) if (['r', 'e'].includes(G.rollFish(1, 'bait1', 0, rnd, c).tier)) n++; return n; };
+  assert.ok(cnt(far.bonus) > cnt(near.bonus) * 1.3, '멀리 던지면 드문 물고기가 더 와요');
+  const sv = G.newSave(); Object.assign(sv.items, { rod8: 1, float5: 1 }); Object.assign(sv.eq, { rod: 'rod8', float: 'float5' });
+  const stF = G.stats(sv); assert.ok(G.castResult(0.83, stF).nice && !G.castResult(0.83, st0).nice, '좋은 장비는 좋은 구간이 넓어요');
+  assert.ok(G.castGauge(0) === 0 && Math.abs(G.castGauge(1 / G.CAST.speed) - 1) < 1e-9); }
+console.log('cast ok');
+// 레벨 · 칭호
+{ const sv = G.newSave(); const st = G.stats(sv); assert.equal(sv.lv, 1);
+  const r = G.onCatch(sv, G.FISH_BY_ID.p13, { size: 200, grade: G.GRADE_BY.S }, st, rnd);
+  assert.ok(r.exp > 400 && r.levelUps.length >= 2, '보스 S 등급이면 레벨이 여러 번 올라요 ' + r.exp);
+  assert.ok(sv.titles.t_boss1 && r.titles.some(t => t.id === 't_boss1'), '보스 칭호');
+  const powBefore = G.stats(sv).pow; sv.title = 't_boss1'; assert.equal(G.stats(sv).pow, powBefore + 1, '단 칭호 효과');
+  let total = 0; for (let l = 1; l < G.LEVEL.max; l++) total += G.LEVEL.need(l); assert.ok(total > 100000, '만렙까지 충분히 길어요 ' + total);
+  for (const t of G.TITLES) assert.ok(Object.keys(t.cond).length === 1, t.name);
+  assert.equal(G.fixSave({ title: 'nope' }).title, 't_new'); }
+console.log('level ok');

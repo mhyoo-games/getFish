@@ -101,3 +101,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes pressBtn { 0% { transform: scale(.88) translateY(4px); } 100% { transform: scale(1); } }
 .resultCard { animation: popIn .32s cubic-bezier(.2,1.6,.4,1); }
 @keyframes popIn { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+.pill.lv { position: relative; overflow: hidden; padding-bottom: 9px; display: flex; gap: 6px; align-items: center; }
+.pill.lv span { font-size: 12px; color: var(--soft); }
+.pill.lv i { position: absolute; left: 0; bottom: 0; height: 4px; background: linear-gradient(90deg, #8AD86A, #F2C23A); }
+.expLine { font-size: 14px; margin: 6px 0; } .expLine b { color: var(--accent); }
+@media (max-width: 720px) { .pill.lv span { display: none; } }

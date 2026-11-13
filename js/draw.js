@@ -387,7 +387,7 @@ function rawAngler(ctx, x, y, s, av, pose, t, items, mode) {
   const A = av.animal, hat = items[av.hat], outfit = items[av.outfit], acc = items[av.acc], rod = items[av.rod];
   ctx.save(); ctx.translate(x, y); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const bob = Math.sin(t * 2) * s * 0.01, pull = pose === 'pull' ? Math.sin(t * 18) * 0.04 : 0;
-  const rodA = pose === 'cast' ? -2.2 : pose === 'pull' ? -1.05 + pull : pose === 'cheer' ? -1.75 + Math.sin(t * 10) * 0.05 : -1.25;   // 낚싯대 각도 (위로)
+  const rodA = pose === 'aim' ? -2.05 + Math.sin(t * 7) * 0.05 : pose === 'cast' ? -2.2 : pose === 'pull' ? -1.05 + pull : pose === 'cheer' ? -1.75 + Math.sin(t * 10) * 0.05 : -1.25;   // 낚싯대 각도 (위로)
   ctx.lineWidth = s * 0.02; ctx.strokeStyle = OUT;
   if (BODY) {
   // 그림자
