@@ -19,7 +19,25 @@ const stage = () => STAGES[save.stage - 1];
 // ---------------------------------------------------------------- 상태
 // idle → cast → wait → bite → fight → (result) → idle
 const S = { parts: [], freeze: 0, land: null, mode: 'idle', t: 0, modeT: 0, bobX: 0.5, bobY: 0.62, biteAt: 0, fish: null, roll: null, battle: null, fx: [], shake: 0, msgT: 0, bait: null, boss: false };
-const buzz = p => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) { } };   // 휴대폰 진동 (지원하는 기기만)
+// ---------------------------------------------------------------- 진동 (타격감)
+// 안드로이드: navigator.vibrate 패턴. 아이폰(Safari 18 이상): 진동 API가 없어서, 숨겨 둔 '스위치' 체크박스를 눌러 시스템 햅틱을 한 번씩 울려요.
+const HAP = { ui: [8], aim: [14], throw: [28], nice: [22, 35, 55], hook: [55, 30, 35], good: [38], perfect: [60], gold: [45, 30, 85], miss: [120], bite: [70, 50, 70], catch: [60, 50, 160], level: [30, 40, 30, 40, 90] };
+let hapOn = true; try { hapOn = localStorage.getItem('getfish_haptic') !== 'off'; } catch (e) { }
+const iosSw = (() => { if (navigator.vibrate) return null; const l = document.createElement('label'), i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('switch', ''); l.append(i); l.style.cssText = 'position:fixed;left:-99px;top:0;width:1px;height:1px;opacity:0;pointer-events:none'; l.setAttribute('aria-hidden', 'true'); document.body.append(l); return l; })();
+function haptic(kind) {
+  if (!hapOn) return; const p = HAP[kind] || HAP.ui;
+  try {
+    if (navigator.vibrate) { navigator.vibrate(p); return; }
+    if (iosSw) {   // 아이폰은 '사용자가 막 누른 순간'에만 햅틱이 울려서, 아직 그 순간이 아니면 손을 뗄 때 울려요
+      const ua = navigator.userActivation;
+      if (!ua || ua.isActive) iosTick(p); else { hapPending = { p, t: performance.now() }; }
+    }
+  } catch (e) { }
+}
+let hapPending = null;
+function iosTick(p) { iosSw.click(); for (let k = 2; k < p.length; k += 2) setTimeout(() => iosSw.click(), p.slice(0, k).reduce((a, b) => a + b, 0)); }
+for (const ev of ['pointerup', 'touchend']) addEventListener(ev, () => { if (hapPending && iosSw && performance.now() - hapPending.t < 400) { const p = hapPending.p; hapPending = null; iosTick(p); } }, true);
+const buzz = p => haptic(typeof p === 'string' ? p : 'good');
 function pressAnim() { const b = $('btnAct'); b.classList.remove('press'); void b.offsetWidth; b.classList.add('press'); }
 function setMode(m) { S.mode = m; S.modeT = 0; actButton(); }
 function say(text, cls = '', ms = 1400) { const m = $('msg'); m.textContent = text; m.className = cls; m.hidden = false; clearTimeout(say.t); say.t = setTimeout(() => m.hidden = true, ms); }
@@ -32,13 +50,13 @@ function act() {
   if (S.mode === 'landed') { if (S.land && !S.land.shown) { S.land.shown = true; showResult(S.land.res); } return; }
   if (S.mode === 'idle') aim(false);
   else if (S.mode === 'aim') cast(S.aimBoss, G.castGauge(S.modeT));
-  else if (S.mode === 'wait') { say('아직이에요… 찌가 쑥 들어갈 때!', 'warn'); }
+  else if (S.mode === 'wait') { haptic('ui'); say('아직이에요… 찌가 쑥 들어갈 때!', 'warn'); }
   else if (S.mode === 'bite') hookFish();
   else if (S.mode === 'fight') strike();
 }
 function aim(boss) {   // 힘 게이지 시작
   if (boss && !G.owned(save, 'bait4')) { say('황금 미끼가 없어요 (상점·드랍·도감 세트)', 'warn', 2000); return; }
-  S.aimBoss = boss; snd.click(); setMode('aim');
+  S.aimBoss = boss; snd.click(); haptic('aim'); setMode('aim');
 }
 function cast(boss, power = 0.5) {
   if (boss) { if (!G.owned(save, 'bait4')) { say('황금 미끼가 없어요 (상점·드랍·도감 세트)', 'warn', 2000); return; } save.items.bait4--; if (!save.items.bait4) delete save.items.bait4; S.bait = 'bait4'; }
@@ -48,22 +66,23 @@ function cast(boss, power = 0.5) {
   S.bobX = 0.56 + power * 0.13 + (Math.random() - 0.5) * 0.05; S.bobY = 0.6 - power * 0.14 + Math.random() * 0.02;   // 멀리 던질수록 수평선 쪽
   S.biteAt = 1.2 + Math.random() * (boss ? 1.5 : 3.2) * (1 - ST.luck) * (1 - ST.far);
   say(c.nice ? `✨ 나이스 캐스팅! ${c.dist}m` : `${c.dist}m`, c.nice ? 'good' : '', 1100);
-  if (c.nice) { buzz(30); burst(W * S.bobX, H * S.bobY, 14, '#FFE680', 160, 'star'); }
+  haptic(c.nice ? 'nice' : 'throw');
+  if (c.nice) { burst(W * S.bobX, H * S.bobY, 14, '#FFE680', 160, 'star'); }
   snd.cast(); setMode('cast');
 }
 function hookFish() {
   const c = S.castRes || G.castResult(0.5, ST);
   S.fish = G.rollFish(save.stage, S.bait, ST.luck, Math.random, S.boss ? 0 : c.bonus); S.roll = G.rollSize(S.fish, ST.luck + c.luck);
-  S.battle = G.newBattle(S.fish, S.roll, ST, Math.random, c.timeBonus); snd.hook(); S.shake = 0.4;
+  S.battle = G.newBattle(S.fish, S.roll, ST, Math.random, c.timeBonus); snd.hook(); haptic('hook'); S.shake = 0.4;
   if (S.fish.tier === 'boss') say(`👑 ${S.fish.name} 등장!`, 'boss', 1800); else if (['r', 'e'].includes(S.fish.tier)) say('묵직해요! 큰 녀석이에요', 'good', 1300);
   setMode('fight');
 }
 function strike() {
   const b = S.battle, r = G.hit(b);
-  if (r.kind === 'miss') { snd.miss(); fx('miss', b.x); S.shake = 0.25; buzz(70); S.laneFlash = { t: 0, col: '255,90,70' }; }
+  if (r.kind === 'miss') { snd.miss(); fx('miss', b.x); S.shake = 0.25; haptic('miss'); S.laneFlash = { t: 0, col: '255,90,70' }; }
   else {
     snd.hit(r.kind, r.gold); fx(r.kind, r.at, r); fx('ring', r.at, r); S.shake = r.gold ? 0.3 : 0.12;
-    buzz(r.gold ? [25, 30, 45] : r.kind === 'perfect' ? 35 : 18);
+    haptic(r.gold ? 'gold' : r.kind === 'perfect' ? 'perfect' : 'good');
     if (r.kind === 'perfect' || r.gold) S.freeze = r.gold ? 0.09 : 0.06;   // 잠깐 멈춤 (맞았다는 손맛)
     S.laneFlash = { t: 0, col: r.gold ? '255,214,80' : r.kind === 'perfect' ? '160,240,255' : '255,255,255' };
     burst(laneRect().x + r.at * laneRect().w, laneRect().y + laneRect().h / 2, r.gold ? 16 : 8, r.gold ? '#FFD650' : '#FFFFFF', 160);
@@ -73,7 +92,7 @@ function strike() {
 function endFight() {
   const b = S.battle;
   if (b.done === 'caught') {
-    const res = G.onCatch(save, S.fish, S.roll, ST); persist(); snd.catch(); buzz([40, 50, 120]);
+    const res = G.onCatch(save, S.fish, S.roll, ST); persist(); snd.catch(); haptic(res.levelUps.length ? 'level' : 'catch');
     S.land = { res, t: 0, shown: false, from: [W * S.bobX, H * S.bobY] }; setMode('landed');
     burst(W * S.bobX, H * S.bobY, 26, '#FFFFFF', 420, 'drop');   // 물보라
 
@@ -94,7 +113,7 @@ function hud() {
   const [a, n] = G.dexCount(save); $('dexCount').textContent = `📖 ${a}/${n}`;
   const b = BAIT_BY_ID[save.eq.bait]; $('btnBait').textContent = `${baitIcon(b.id)} ${b.name}${b.price ? ' ×' + (save.items[b.id] || 0) : ''}`;
   $('btnBoss').textContent = `👑 보스 도전 ×${save.items.bait4 || 0}`;
-  $('btnSound').textContent = snd.on ? '🔊' : '🔇';
+  $('btnSound').textContent = snd.on ? '🔊' : '🔇'; $('btnHap').textContent = hapOn ? '📳' : '📴';
 }
 const baitIcon = id => ({ bait0: '🪝', bait1: '🪱', bait2: '🦐', bait3: '✨', bait4: '🌟' })[id];
 
@@ -111,7 +130,7 @@ function frame(now) {
 }
 function update(dt) {
   if (S.mode === 'cast' && S.modeT > 0.7) setMode('wait');
-  if (S.mode === 'wait' && S.modeT > S.biteAt) { setMode('bite'); snd.bite(); }
+  if (S.mode === 'wait' && S.modeT > S.biteAt) { setMode('bite'); snd.bite(); haptic('bite'); }
   if (S.mode === 'bite' && S.modeT > 1.0 * (1 + ST.slow * 2)) { say('놓쳤어요! 찌가 들어가면 바로 눌러요', 'warn', 1600); setMode('idle'); }
   if (S.mode === 'fight') { if (S.freeze > 0) S.freeze -= dt; else { G.stepBattle(S.battle, dt); if (S.battle.done) endFight(); } }
   if (S.mode === 'landed' && S.land) { S.land.t += dt; const L = S.land;
@@ -378,10 +397,11 @@ document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openShee
 $('btnStage').onclick = () => openSheet('stage'); $('lvPill').onclick = () => openSheet('title'); $('btnBait').onclick = () => openSheet('bait');
 $('btnBoss').onclick = () => { snd.init(); if (S.mode === 'idle') aim(true); };
 $('btnSound').onclick = () => { snd.init(); snd.toggle(); hud(); };
+$('btnHap').onclick = () => { hapOn = !hapOn; try { localStorage.setItem('getfish_haptic', hapOn ? 'on' : 'off'); } catch (e) { } hud(); if (hapOn) haptic('perfect'); say(hapOn ? '📳 진동 켬' : '진동 끔', 'good', 900); };
 function start() { snd.init(); snd.stage(save.stage); $('intro').hidden = true; snd.click(); }
 $('startBtn').onclick = start;
 // 버튼을 누른 뒤 Space가 그 버튼을 다시 누르지 않게
-document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('button'); if (b) setTimeout(() => b.blur(), 0); }, true);
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('button'); if (b) { setTimeout(() => b.blur(), 0); if (b.id !== 'btnAct') haptic('ui'); } }, true);
 
 hud(); actButton(); requestAnimationFrame(frame);
 window.__gf = { S, get save() { return save; }, G, act, openSheet, closeSheet, showResult, persist, set save(v) { save = v; persist(); } };
