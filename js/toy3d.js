@@ -1,4 +1,4 @@
-// 겟피쉬 3D 그림: 사람 낚시꾼(Kenney Mini Characters, CC0)과 같은 장난감 느낌으로 만든 물고기.
+// 토이피쉬 3D 그림: 사람 낚시꾼(Kenney Mini Characters, CC0)과 같은 장난감 느낌으로 만든 물고기.
 // 3D로 그린 뒤 2D 캔버스에 붙여 넣어요 (게임 화면은 2D 그대로).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';

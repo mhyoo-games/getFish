@@ -1,4 +1,4 @@
-// getFish 그림: 모두 canvas로 직접 그려요 (그림 파일 없음).
+// 토이피쉬 그림: 모두 canvas로 직접 그려요 (그림 파일 없음).
 // drawFish: 물고기 52종 (모양·색·무늬를 data.js의 look으로) · drawScene: 바다와 배 · drawAngler: 뒷모습 낚시꾼 + 아바타
 
 const TAU = Math.PI * 2;

@@ -1,4 +1,4 @@
-// 겟피쉬 화면: 낚시(던지기 → 입질 → 타이밍 싸움 → 결과) + 가방·상점·도감·꾸미기
+// 토이피쉬 화면: 낚시(던지기 → 입질 → 타이밍 싸움 → 결과) + 가방·상점·도감·꾸미기
 import * as G from './game.js';
 import { STAGES, STAGE_ICON, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS, ANIMALS, CHARACTERS, SLOTS, BAG_MAX, LEVEL, TITLES } from './data.js';
 import { drawFish, drawScene, drawAngler, drawAvatarFront, fishSprite, setToy } from './draw.js';
@@ -509,7 +509,7 @@ function introChars() {
   box.innerHTML = CHARACTERS.map(c => `<button class="pick ${save.gender === c.id ? 'on' : ''}" data-g="${c.id}"><canvas width="220" height="260"></canvas><b>${c.name}</b></button>`).join('');
   box.querySelectorAll('[data-g]').forEach(b => { portraitInto(b.querySelector('canvas'), { g: b.dataset.g, hat: save.eq.hat, outfit: save.eq.outfit, acc: save.eq.acc }, { turn: b.dataset.g === 'm' ? 0.35 : -0.35 });
     b.onclick = () => { save.gender = b.dataset.g; persist(); snd.init(); snd.click(); haptic('nice'); introChars(); }; });
-  $('startBtn').disabled = !save.gender; $('pickHint').textContent = save.gender ? '' : '함께 낚시할 캐릭터를 골라 주세요';
+  $('startBtn').disabled = !save.gender; $('pickHint').textContent = save.gender ? '' : '함께 낚시할 장난감 낚시꾼을 골라 주세요';
 }
 introChars();
 // 버튼을 누른 뒤 Space가 그 버튼을 다시 누르지 않게

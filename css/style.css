@@ -1,4 +1,4 @@
-/* getFish 화면 꾸미기 — 수채화 그림책 느낌의 따뜻한 종이색 창 */
+/* 토이피쉬 화면 꾸미기 — 수채화 그림책 느낌의 따뜻한 종이색 창 */
 :root { --paper: #FBF4E4; --ink: #3A2A24; --soft: #8A7462; --accent: #E8743A; --sea: #2E8FB8; --ok: #5AAA4A; }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #1E4E6A; font-family: 'Galmuri11', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color: var(--ink); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }

@@ -1,4 +1,4 @@
-// 겟피쉬 규칙 (화면과 상관없는 순수 계산) — tests/logic.test.mjs 에서 그대로 불러 검사해요.
+// 토이피쉬 규칙 (화면과 상관없는 순수 계산) — tests/logic.test.mjs 에서 그대로 불러 검사해요.
 import { STAGES, TIERS, GRADES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, DROPS, SETS, START, BAG_MAX, LEVEL, TITLES } from './data.js';
 
 export const SAVE_KEY = 'getfish_save_v1';
