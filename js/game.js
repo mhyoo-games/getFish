@@ -1,4 +1,4 @@
-// getFish 규칙 (화면과 상관없는 순수 계산) — tests/logic.test.mjs 에서 그대로 불러 검사해요.
+// 겟피쉬 규칙 (화면과 상관없는 순수 계산) — tests/logic.test.mjs 에서 그대로 불러 검사해요.
 import { STAGES, TIERS, GRADES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, DROPS, SETS, START, BAG_MAX, LEVEL, TITLES } from './data.js';
 
 export const SAVE_KEY = 'getfish_save_v1';
@@ -6,8 +6,8 @@ export const EQ_SLOTS = ['rod', 'line', 'float', 'hat', 'outfit', 'acc'];
 
 // ---------------------------------------------------------------- 저장
 export function newSave() {
-  return { v: 1, coins: START.coins, items: { ...START.items }, eq: { ...START.eq }, animal: 'hamster', stage: 1, unlocked: 1,
-    dex: {}, sets: {}, bag: [], stats: { casts: 0, caught: 0, escaped: 0, bosses: 0, coinsEarned: 0, nice: 0 }, seen: {}, lv: 1, exp: 0, titles: { t_new: 1 }, title: 't_new' };
+  return { v: 2, coins: START.coins, items: { ...START.items }, eq: { ...START.eq }, gender: null, stage: 1, unlocked: 1,
+    dex: {}, sets: {}, bag: [], stats: { casts: 0, caught: 0, escaped: 0, bosses: 0, coinsEarned: 0, nice: 0, perfect: 0 }, seen: {}, lv: 1, exp: 0, titles: { t_new: 1 }, title: 't_new', calm: 0 };
 }
 export function fixSave(s) {
   const d = newSave(); if (!s || typeof s !== 'object') return d;
@@ -15,6 +15,8 @@ export function fixSave(s) {
   for (const k of EQ_SLOTS) if (!ITEM_BY_ID[o.eq[k]] || !o.items[o.eq[k]]) o.eq[k] = d.eq[k];   // 없어진 장비는 기본으로
   if (!BAIT_BY_ID[o.eq.bait]) o.eq.bait = 'bait0';
   o.titles = { t_new: 1, ...(s.titles || {}) }; if (!TITLE_BY_ID[o.title] || !o.titles[o.title]) o.title = 't_new'; o.lv = Math.max(1, Math.min(LEVEL.max, o.lv | 0)); o.exp = Math.max(0, +o.exp || 0);
+  if (o.gender !== 'm' && o.gender !== 'f') o.gender = null;   // 예전(동물) 저장은 처음에 남자·여자를 다시 골라요
+  delete o.animal; o.calm = Math.max(0, +o.calm || 0); o.v = 2;
   o.bag = (o.bag || []).filter(b => FISH_BY_ID[b.id]); o.unlocked = Math.max(1, Math.min(STAGES.length, o.unlocked | 0)); o.stage = Math.max(1, Math.min(o.unlocked, o.stage | 0));
   return o;
 }
@@ -31,24 +33,35 @@ export function stats(save) {
 export const STAT_NAMES = { far: '멀리 던지기', pow: '힘', crit: '금빛 과녁', heart: '줄 버팀', time: '시간', slow: '느리게', zone: '과녁 넓게', luck: '행운', coin: '동전' };
 export function fmtStat(k, v) { return ['crit', 'slow', 'zone', 'luck', 'coin', 'far'].includes(k) ? `${v >= 0 ? '+' : ''}${Math.round(v * 100)}%` : k === 'time' ? `${v >= 0 ? '+' : ''}${v}초` : `${v >= 0 ? '+' : ''}${v}`; }
 
-// ---------------------------------------------------------------- 던지기 (힘 게이지)
-// 게이지가 오르내리는 동안 눌러서 던져요. 끝(오른쪽) 가까이 '좋은 구간'에서 멈추면 '나이스 캐스팅'.
-// 멀리 던질수록 드문 물고기가 더 오고, 장비의 '멀리 던지기'가 좋은 구간을 넓히고 효과를 키워요.
-export const CAST = { speed: 1.15, sweet: 0.12 };
-export function castGauge(t) { const u = (t * CAST.speed) % 2; return u < 1 ? u : 2 - u; }   // 0 → 1 → 0 …
-export function castResult(power, st) {
-  const sweet = CAST.sweet + st.far * 0.3, nice = power >= 1 - sweet;
-  const bonus = power * (0.6 + st.far * 2) + (nice ? 0.35 : 0);     // 드문 물고기 배율에 쓰임
-  const dist = Math.round(8 + power * 32 * (1 + st.far));             // 화면에 보여 주는 비거리(m)
-  return { power, nice, bonus: +bonus.toFixed(3), dist, sweet, timeBonus: nice ? 2 : 0, luck: power * 0.06 + (nice ? 0.04 : 0) };
+// ---------------------------------------------------------------- 던지기 (가운데 맞히기)
+// 별이 막대 위를 왔다 갔다 해요. 가운데에서 멈출수록 멀리·정확하게 던져져요 (PERFECT · GREAT · GOOD · 아쉬워요).
+// 잘 던질수록 드문 물고기와 보스가 더 오고, 장비의 '멀리 던지기'가 가운데 구간을 넓혀요. 깊은 바다일수록 별이 빨라요.
+export const CAST = { speed: 1.25, perStage: 0.05, perfect: 0.07, great: 0.22, good: 0.5 };
+export const castSpeed = stage => CAST.speed + (stage - 1) * CAST.perStage;
+export function castGauge(t, stage = 1) { const u = (t * castSpeed(stage)) % 2; return u < 1 ? u : 2 - u; }   // 0 → 1 → 0 …
+export function castZones(st) { return { perfect: CAST.perfect + st.far * 0.12, great: CAST.great + st.far * 0.22, good: CAST.good + st.far * 0.2 }; }
+export function castResult(pos, st) {
+  const z = castZones(st), d = Math.min(1, Math.abs(pos - 0.5) * 2);    // 0 = 한가운데, 1 = 끝
+  const grade = d <= z.perfect ? 'perfect' : d <= z.great ? 'great' : d <= z.good ? 'good' : 'bad';
+  const q = 1 - d, K = { perfect: [1.6, 3, 0.08, 1.6], great: [1.0, 1, 0.04, 1.25], good: [0.45, 0, 0.01, 1], bad: [0.1, 0, 0, 0.7] }[grade];
+  const bonus = K[0] * (1 + st.far * 1.5);                              // 드문 물고기 배율에 쓰임
+  const dist = Math.round(8 + q * 30 * (1 + st.far) + (grade === 'perfect' ? 8 : 0));
+  return { pos, d, grade, nice: grade === 'perfect' || grade === 'great', perfect: grade === 'perfect', bonus: +bonus.toFixed(3), dist, power: q, timeBonus: K[1], luck: K[2], bossK: K[3] };
+}
+
+/** 보스가 나타날 확률: 미끼마다 다르고, 잘 던지면·행운이 높으면·오래 못 만났으면 조금씩 올라요 */
+export function bossChance(baitId, st, cast = null, calm = 0) {
+  const b = BAIT_BY_ID[baitId] || BAITS[0];
+  return Math.min(0.6, b.boss * (cast ? cast.bossK : 1) * (1 + st.luck) + Math.min(0.06, calm * 0.0008));
 }
 
 // ---------------------------------------------------------------- 물고기 뽑기
 /** 이 바다에서 어떤 물고기가 물지. rnd: 0~1 난수 함수 */
-export function rollFish(stage, baitId, luck, rnd = Math.random, cast = 0) {
+export function rollFish(stage, baitId, luck, rnd = Math.random, cast = 0, boss = 0) {
   const bait = BAIT_BY_ID[baitId] || BAITS[0];
-  if (bait.boss) return FISH_BY_ID[STAGES[stage - 1].boss];
-  const pool = FISH.filter(f => f.stage === stage && f.tier !== 'boss');
+  if (boss > 0 && rnd() < boss) return FISH_BY_ID[STAGES[stage - 1].boss];
+  // 정해진 미끼로만 낚이는 물고기는 그 미끼일 때만
+  const pool = FISH.filter(f => f.stage === stage && f.tier !== 'boss' && (!f.bait || f.bait.includes(bait.id)));
   const castK = { c: 0, u: 0.5, r: 1, e: 1.5 };   // 멀리 던질수록 드문 물고기 쪽으로
   const ws = pool.map(f => TIERS[f.tier].w * (bait.w[f.tier] ?? 1) * (f.tier === 'c' ? 1 : 1 + luck * 2) * (1 + cast * castK[f.tier]));
   let r = rnd() * ws.reduce((a, b) => a + b, 0);
@@ -84,7 +97,10 @@ function newTarget(b, i, rnd) {
 export function stepBattle(b, dt, rnd = Math.random) {
   if (b.done) return b;
   b.t += dt; b.time -= dt;
-  const rage = b.hp / b.maxHp < 0.3 ? 1.25 : 1;
+  // 보스는 체력이 60%·30% 아래로 내려가면 포효하며 더 빨라져요 (b.events에 'roar')
+  const hpk = b.hp / b.maxHp;
+  if (b.fish.tier === 'boss') { const ph = hpk < 0.3 ? 2 : hpk < 0.6 ? 1 : 0; if (ph > (b.phase || 0)) { b.phase = ph; (b.events || (b.events = [])).push('roar'); b.turnT = 0; } }
+  const rage = b.fish.tier === 'boss' ? [1, 1.15, 1.32][b.phase || 0] : hpk < 0.3 ? 1.25 : 1;
   b.x += b.dir * b.speed * rage * dt;
   if (b.x > 1) { b.x = 2 - b.x; b.dir = -1; } else if (b.x < 0) { b.x = -b.x; b.dir = 1; }
   b.turnT -= dt;
@@ -124,6 +140,7 @@ export function onCatch(save, fish, roll, st, rnd = Math.random) {
   d.n++; if (roll.size > d.max) { d.max = roll.size; res.newBest = d.n > 1; }
   const gi = g => GRADES.findIndex(x => x.g === g); if (gi(roll.grade.g) > gi(d.best)) d.best = roll.grade.g;
   save.dex[fish.id] = d; save.stats.caught++;
+  if (fish.tier === 'boss') save.calm = 0;
   if (fish.tier === 'boss') { save.stats.bosses++; if (fish.stage === save.unlocked && save.unlocked < STAGES.length) { save.unlocked++; res.unlocked = save.unlocked; } }
   // 가방에 넣기 (꽉 차면 바로 팔아요)
   if (save.bag.length < BAG_MAX) save.bag.push({ id: fish.id, size: roll.size, g: roll.grade.g, t: Date.now() });
@@ -174,7 +191,8 @@ export function addExp(save, n) {
 export function titleValue(save, c) {
   const k = Object.keys(c)[0], v = c[k], dexN = Object.keys(save.dex).length;
   const have = k === 'level' ? save.lv : k === 'dex' ? dexN : k === 'bosses' ? FISH.filter(f => f.tier === 'boss' && save.dex[f.id]).length
-    : k === 'ss' ? Object.values(save.dex).filter(d => d.best === 'SS').length : k === 'caught' ? save.stats.caught : k === 'nice' ? (save.stats.nice || 0)
+    : k === 'ss' ? Object.values(save.dex).filter(d => d.best === 'SS').length : k === 'caught' ? save.stats.caught : k === 'nice' ? (save.stats.nice || 0) : k === 'perfect' ? (save.stats.perfect || 0)
+    : k === 'special' ? FISH.filter(f => f.bait && save.dex[f.id]).length
     : k === 'stage' ? (FISH.filter(f => f.stage === v).every(f => save.dex[f.id]) ? 1 : 0) : 0;
   return [have, k === 'stage' ? 1 : v];
 }
@@ -188,7 +206,7 @@ export function checkTitles(save) {
 // ---------------------------------------------------------------- 상점 · 가방
 export function buy(save, id) {
   const it = ITEM_BY_ID[id], bait = BAIT_BY_ID[id];
-  const price = it ? it.shop : bait ? bait.price : 0;
+  const price = it ? it.shop : bait && bait.shop !== false ? bait.price : 0;
   if (!price) return { ok: false, why: '팔지 않는 물건이에요' };
   if (it && owned(save, id)) return { ok: false, why: '이미 가지고 있어요' };
   if (save.coins < price) return { ok: false, why: '동전이 모자라요' };
@@ -202,16 +220,18 @@ export function sellBag(save, idxs, st) {
 }
 export function equip(save, id) {
   const it = ITEM_BY_ID[id]; if (it && owned(save, id)) { save.eq[it.slot] = id; return true; }
-  const b = BAIT_BY_ID[id]; if (b && !b.boss && (b.price === 0 || owned(save, id))) { save.eq.bait = id; return true; }   // 황금 미끼는 보스 도전에서만
+  const b = BAIT_BY_ID[id]; if (b && (b.id === 'bait0' || owned(save, id))) { save.eq.bait = id; return true; }
   return false;
 }
 /** 던질 때 미끼 쓰기. 다 떨어지면 맨 바늘로 */
 export function useBait(save) {
   const id = save.eq.bait; if (id === 'bait0') return 'bait0';
   if (!owned(save, id)) { save.eq.bait = 'bait0'; return 'bait0'; }
-  save.items[id]--; if (save.items[id] <= 0) { delete save.items[id]; if (id !== 'bait4') save.eq.bait = 'bait0'; }
+  save.items[id]--; if (save.items[id] <= 0) { delete save.items[id]; save.eq.bait = 'bait0'; }
   return id;
 }
+/** 던졌다가 거둘 때: 물고기가 먹지 않은 미끼는 돌려받아요 */
+export function refundBait(save, id) { if (!id || id === 'bait0') return; give(save, id, 1); if (save.eq.bait === 'bait0') save.eq.bait = id; }
 export function dexCount(save) { return [FISH.filter(f => save.dex[f.id]).length, FISH.length]; }
 export { LEVEL, TITLES };
 export { STAGES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS };

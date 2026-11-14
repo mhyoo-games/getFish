@@ -1,7 +1,7 @@
-// getFish 화면: 낚시(던지기 → 입질 → 타이밍 싸움 → 결과) + 가방·상점·도감·꾸미기
+// 겟피쉬 화면: 낚시(던지기 → 입질 → 타이밍 싸움 → 결과) + 가방·상점·도감·꾸미기
 import * as G from './game.js';
-import { STAGES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS, ANIMALS, SLOTS, BAG_MAX, LEVEL, TITLES } from './data.js';
-import { drawFish, drawScene, drawAngler, drawAvatarFront, fishSprite } from './draw.js';
+import { STAGES, STAGE_ICON, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS, ANIMALS, CHARACTERS, SLOTS, BAG_MAX, LEVEL, TITLES } from './data.js';
+import { drawFish, drawScene, drawAngler, drawAvatarFront, fishSprite, setToy } from './draw.js';
 import { createSound } from './sound.js';
 
 const $ = id => document.getElementById(id);
@@ -15,13 +15,17 @@ addEventListener('resize', resize); resize();
 function load() { try { return G.fixSave(JSON.parse(localStorage.getItem(G.SAVE_KEY))); } catch (e) { return G.newSave(); } }
 function persist() { try { localStorage.setItem(G.SAVE_KEY, JSON.stringify(save)); } catch (e) { } ST = G.stats(save); hud(); }
 const stage = () => STAGES[save.stage - 1];
+// 3D 그림(사람 낚시꾼 · 장난감 물고기). 못 불러오면 예전 2D 그림으로 그려요.
+let toy = null;
+const toyReady = import('./toy3d.js').then(m => m.createToy()).then(t => { toy = t; setToy(t); thumbCache.clear(); introChars(); if (sheetKind) drawSheet(); return t; })
+  .catch(e => { console.warn('3D 그림 없이 그려요', e); introChars(); return null; });
 
 // ---------------------------------------------------------------- 상태
 // idle → cast → wait → bite → fight → (result) → idle
-const S = { parts: [], freeze: 0, land: null, mode: 'idle', t: 0, modeT: 0, bobX: 0.5, bobY: 0.62, biteAt: 0, fish: null, roll: null, battle: null, fx: [], shake: 0, msgT: 0, bait: null, boss: false };
+const S = { parts: [], freeze: 0, land: null, mode: 'idle', t: 0, dt: 0, modeT: 0, bobX: 0.5, bobY: 0.62, biteAt: 0, fish: null, roll: null, battle: null, fx: [], shake: 0, msgT: 0, bait: null, boss: false, castFx: null, roarT: 9, flash: 0 };
 // ---------------------------------------------------------------- 진동 (타격감)
 // 안드로이드: navigator.vibrate 패턴. 아이폰(Safari 18 이상): 진동 API가 없어서, 숨겨 둔 '스위치' 체크박스를 눌러 시스템 햅틱을 한 번씩 울려요.
-const HAP = { ui: [8], aim: [14], throw: [28], nice: [22, 35, 55], hook: [55, 30, 35], good: [38], perfect: [60], gold: [45, 30, 85], miss: [120], bite: [70, 50, 70], catch: [60, 50, 160], level: [30, 40, 30, 40, 90] };
+const HAP = { ui: [8], aim: [14], throw: [28], nice: [22, 35, 55], hook: [55, 30, 35], good: [38], perfect: [60], gold: [45, 30, 85], miss: [120], bite: [70, 50, 70], catch: [60, 50, 160], level: [30, 40, 30, 40, 90], cancel: [18, 30, 18], boss: [90, 60, 90, 60, 220], roar: [160, 40, 160] };
 let hapOn = true; try { hapOn = localStorage.getItem('getfish_haptic') !== 'off'; } catch (e) { }
 const iosSw = (() => { if (navigator.vibrate) return null; const l = document.createElement('label'), i = document.createElement('input'); i.type = 'checkbox'; i.setAttribute('switch', ''); l.append(i); l.style.cssText = 'position:fixed;left:-99px;top:0;width:1px;height:1px;opacity:0;pointer-events:none'; l.setAttribute('aria-hidden', 'true'); document.body.append(l); return l; })();
 function haptic(kind) {
@@ -48,35 +52,48 @@ function act() {
   if (!$('sheet').hidden || !$('intro').hidden) return;
   pressAnim();
   if (S.mode === 'landed') { if (S.land && !S.land.shown) { S.land.shown = true; showResult(S.land.res); } return; }
-  if (S.mode === 'idle') aim(false);
-  else if (S.mode === 'aim') cast(S.aimBoss, G.castGauge(S.modeT));
+  if (S.mode === 'bossIntro') { if (S.modeT > 1.4) startFight(); return; }
+  if (S.mode === 'idle') aim();
+  else if (S.mode === 'aim') cast(G.castGauge(S.modeT, save.stage));
   else if (S.mode === 'wait') { haptic('ui'); say('아직이에요… 찌가 쑥 들어갈 때!', 'warn'); }
   else if (S.mode === 'bite') hookFish();
   else if (S.mode === 'fight') strike();
 }
-function aim(boss) {   // 힘 게이지 시작
-  if (boss && !G.owned(save, 'bait4')) { say('황금 미끼가 없어요 (상점·드랍·도감 세트)', 'warn', 2000); return; }
-  S.aimBoss = boss; snd.click(); haptic('aim'); setMode('aim');
+function aim() {   // 던지기 막대 시작 (별이 왔다 갔다)
+  snd.click(); haptic('aim'); setMode('aim');
 }
-function cast(boss, power = 0.5) {
-  if (boss) { if (!G.owned(save, 'bait4')) { say('황금 미끼가 없어요 (상점·드랍·도감 세트)', 'warn', 2000); return; } save.items.bait4--; if (!save.items.bait4) delete save.items.bait4; S.bait = 'bait4'; }
-  else S.bait = G.useBait(save);
-  S.boss = boss; save.stats.casts++; persist();
-  const c = S.castRes = G.castResult(power, ST); if (c.nice) { save.stats.nice = (save.stats.nice || 0) + 1; const nt = G.checkTitles(save); persist(); nt.forEach(t => setTimeout(() => say(`🏅 칭호 「${t.name}」`, 'good', 2200), 1200)); }
-  S.bobX = 0.56 + power * 0.13 + (Math.random() - 0.5) * 0.05; S.bobY = 0.6 - power * 0.14 + Math.random() * 0.02;   // 멀리 던질수록 수평선 쪽
-  S.biteAt = 1.2 + Math.random() * (boss ? 1.5 : 3.2) * (1 - ST.luck) * (1 - ST.far);
-  say(c.nice ? `✨ 나이스 캐스팅! ${c.dist}m` : `${c.dist}m`, c.nice ? 'good' : '', 1100);
-  haptic(c.nice ? 'nice' : 'throw');
-  if (c.nice) { burst(W * S.bobX, H * S.bobY, 14, '#FFE680', 160, 'star'); }
+function cast(pos = 0.5) {
+  S.bait = G.useBait(save); save.stats.casts++;
+  const c = S.castRes = G.castResult(pos, ST);
+  if (c.nice) save.stats.nice = (save.stats.nice || 0) + 1; if (c.perfect) save.stats.perfect = (save.stats.perfect || 0) + 1;
+  const nt = c.nice ? G.checkTitles(save) : []; persist(); nt.forEach(t => setTimeout(() => say(`🏅 칭호 「${t.name}」`, 'good', 2200), 1200));
+  S.bobX = 0.56 + c.power * 0.13 + (Math.random() - 0.5) * 0.05; S.bobY = 0.6 - c.power * 0.14 + Math.random() * 0.02;   // 잘 던질수록 수평선 쪽
+  S.biteAt = 1.2 + Math.random() * 3.2 * (1 - ST.luck) * (1 - ST.far);
+  S.castFx = { t: 0, c };
+  const label = { perfect: '✨ PERFECT!', great: 'GREAT!', good: 'GOOD', bad: '아쉬워요…' }[c.grade];
+  say(`${label} ${c.dist}m`, c.nice ? 'good' : c.grade === 'bad' ? 'warn' : '', 1100);
+  haptic(c.perfect ? 'gold' : c.nice ? 'nice' : 'throw');
+  if (c.nice) burst(W * S.bobX, H * S.bobY, c.perfect ? 22 : 12, '#FFE680', 160, 'star');
   snd.cast(); setMode('cast');
+}
+/** 던졌다가 거두기: 물고기가 아직 먹지 않았으면 미끼를 돌려받아요 */
+function cancelCast() {
+  if (S.mode === 'aim') { setMode('idle'); haptic('cancel'); say('던지기를 그만뒀어요', '', 900); return; }
+  if (!['cast', 'wait', 'bite'].includes(S.mode)) return;
+  G.refundBait(save, S.bait); save.stats.casts = Math.max(0, save.stats.casts - 1); persist();
+  snd.reel(); haptic('cancel'); say('↩ 낚싯대를 거뒀어요 (미끼는 그대로)', '', 1100);
+  S.reel = { t: 0, from: [W * S.bobX, H * S.bobY] }; setMode('idle');
 }
 function hookFish() {
   const c = S.castRes || G.castResult(0.5, ST);
-  S.fish = G.rollFish(save.stage, S.bait, ST.luck, Math.random, S.boss ? 0 : c.bonus); S.roll = G.rollSize(S.fish, ST.luck + c.luck);
+  S.fish = G.rollFish(save.stage, S.bait, ST.luck, Math.random, c.bonus, G.bossChance(S.bait, ST, c, save.calm)); S.roll = G.rollSize(S.fish, ST.luck + c.luck);
   S.battle = G.newBattle(S.fish, S.roll, ST, Math.random, c.timeBonus); snd.hook(); haptic('hook'); S.shake = 0.4;
-  if (S.fish.tier === 'boss') say(`👑 ${S.fish.name} 등장!`, 'boss', 1800); else if (['r', 'e'].includes(S.fish.tier)) say('묵직해요! 큰 녀석이에요', 'good', 1300);
+  if (S.fish.tier === 'boss') { S.boss = true; setMode('bossIntro'); snd.bossIntro(); snd.boss(true); haptic('boss'); S.shake = 1.2; return; }
+  S.boss = false; save.calm = (save.calm || 0) + 1; persist();
+  if (['r', 'e'].includes(S.fish.tier)) say('묵직해요! 큰 녀석이에요', 'good', 1300);
   setMode('fight');
 }
+function startFight() { if (S.mode !== 'bossIntro') return; S.shake = 0.6; haptic('roar'); snd.roar(); setMode('fight'); }
 function strike() {
   const b = S.battle, r = G.hit(b);
   if (r.kind === 'miss') { snd.miss(); fx('miss', b.x); S.shake = 0.25; haptic('miss'); S.laneFlash = { t: 0, col: '255,90,70' }; }
@@ -93,17 +110,18 @@ function endFight() {
   const b = S.battle;
   if (b.done === 'caught') {
     const res = G.onCatch(save, S.fish, S.roll, ST); persist(); snd.catch(); haptic(res.levelUps.length ? 'level' : 'catch');
-    S.land = { res, t: 0, shown: false, from: [W * S.bobX, H * S.bobY] }; setMode('landed');
+    S.land = { res, t: 0, shown: false, from: [W * S.bobX, H * S.bobY] }; setMode('landed'); if (S.boss) snd.boss(false);
     burst(W * S.bobX, H * S.bobY, 26, '#FFFFFF', 420, 'drop');   // 물보라
 
-  } else { save.stats.escaped++; persist(); snd.snap(); say(b.why === 'line' ? '줄이 끊어졌어요… 😢' : '시간이 다 돼서 도망갔어요', 'warn', 1800); setMode('idle'); }
+  } else { save.stats.escaped++; persist(); snd.snap(); if (S.boss) { snd.boss(false); save.calm = Math.floor((save.calm || 0) / 2); persist(); } say(b.why === 'line' ? '줄이 끊어졌어요… 😢' : '시간이 다 돼서 도망갔어요', 'warn', 1800); setMode('idle'); }
 }
 
 // ---------------------------------------------------------------- 큰 버튼 · 위아래 줄
 function actButton() {
-  const T = { idle: ['🎣', '던지기'], aim: ['💪', '던지기!'], cast: ['🎣', '…'], wait: ['⏳', '기다려요'], bite: ['❗', '챔질!'], fight: ['💥', 'HIT!'], landed: ['🐟', '잡았다!'] }[S.mode] || ['🎣', '던지기'];
+  const T = { idle: ['🎣', '던지기'], aim: ['⭐', '멈춰!'], cast: ['🎣', '…'], wait: ['⏳', '기다려요'], bite: ['❗', '챔질!'], fight: ['💥', 'HIT!'], landed: ['🐟', '잡았다!'], bossIntro: ['👑', '보스!'] }[S.mode] || ['🎣', '던지기'];
   $('actIcon').textContent = T[0]; $('actText').textContent = T[1]; $('hintText').textContent = T[1];
-  $('btnAct').className = S.mode; $('btnBait').disabled = $('btnBoss').disabled = S.mode !== 'idle';
+  $('btnAct').className = S.mode; $('btnBait').disabled = S.mode !== 'idle';
+  $('btnCancel').hidden = !['aim', 'cast', 'wait', 'bite'].includes(S.mode);
 }
 function hud() {
   $('coins').textContent = '🪙 ' + save.coins.toLocaleString();
@@ -111,11 +129,11 @@ function hud() {
   $('lvPill').innerHTML = `<b>Lv.${save.lv}</b> <span>${tt ? tt.name : ''}</span><i style="width:${save.lv >= LEVEL.max ? 100 : Math.min(100, save.exp / need * 100)}%"></i>`;
   $('btnStage').textContent = `🌊 ${stage().name} ▾`;
   const [a, n] = G.dexCount(save); $('dexCount').textContent = `📖 ${a}/${n}`;
-  const b = BAIT_BY_ID[save.eq.bait]; $('btnBait').textContent = `${baitIcon(b.id)} ${b.name}${b.price ? ' ×' + (save.items[b.id] || 0) : ''}`;
-  $('btnBoss').textContent = `👑 보스 도전 ×${save.items.bait4 || 0}`;
+  const b = BAIT_BY_ID[save.eq.bait]; $('btnBait').innerHTML = `${baitIcon(b.id)} ${b.name}${b.id !== 'bait0' ? ' ×' + (save.items[b.id] || 0) : ''} <small class="bossP">👑 ${pct(G.bossChance(b.id, ST, null, save.calm))}</small>`;
   $('btnSound').textContent = snd.on ? '🔊' : '🔇'; $('btnHap').textContent = hapOn ? '📳' : '📴';
 }
-const baitIcon = id => ({ bait0: '🪝', bait1: '🪱', bait2: '🦐', bait3: '✨', bait4: '🌟' })[id];
+const baitIcon = id => ({ bait0: '🪝', bait1: '🪱', bait2: '🦐', bait3: '✨', bait4: '🌟', bait5: '🍙', bait6: '🦑', bait7: '💡', bait8: '🔥', bait9: '🔮' })[id] || '🪱';
+const pct = v => (v * 100 < 10 ? (v * 100).toFixed(1) : Math.round(v * 100)) + '%';
 
 // ---------------------------------------------------------------- 효과 (글자·물보라)
 function fx(kind, at, r) { S.fx.push({ kind, at, t: 0, r }); }
@@ -125,14 +143,18 @@ function laneRect() { const w = Math.min(W * 0.78, 760), x = (W - w) / 2, y = Ma
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000); last = now; S.t += dt; S.modeT += dt;
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; S.t += dt; S.modeT += dt; S.dt = dt;
   try { update(dt); render(); } catch (e) { console.error(e); }
 }
 function update(dt) {
   if (S.mode === 'cast' && S.modeT > 0.7) setMode('wait');
   if (S.mode === 'wait' && S.modeT > S.biteAt) { setMode('bite'); snd.bite(); haptic('bite'); }
   if (S.mode === 'bite' && S.modeT > 1.0 * (1 + ST.slow * 2)) { say('놓쳤어요! 찌가 들어가면 바로 눌러요', 'warn', 1600); setMode('idle'); }
-  if (S.mode === 'fight') { if (S.freeze > 0) S.freeze -= dt; else { G.stepBattle(S.battle, dt); if (S.battle.done) endFight(); } }
+  if (S.mode === 'bossIntro' && S.modeT > 3.2) startFight();
+  if (S.mode === 'fight') { if (S.freeze > 0) S.freeze -= dt; else { G.stepBattle(S.battle, dt); const ev = S.battle.events; if (ev && ev.length) { ev.length = 0; roar(); } if (S.battle.done) endFight(); } }
+  if (S.castFx) { S.castFx.t += dt; if (S.castFx.t > 1.2) S.castFx = null; }
+  if (S.reel) { S.reel.t += dt; if (S.reel.t > 0.5) S.reel = null; }
+  S.roarT += dt; S.flash = Math.max(0, S.flash - dt * 2.5);
   if (S.mode === 'landed' && S.land) { S.land.t += dt; const L = S.land;
     if (L.t > 0.95 && !L.pop) { L.pop = true; snd.coin(); burst(W / 2, H * 0.42, 40, '#FFE680', 520, 'star'); if (L.res.newDex || ['r', 'e', 'boss'].includes(L.res.fish.tier) || ['S', 'SS'].includes(L.res.roll.grade.g)) confetti(); }
     if (L.t > 2.3 && !L.shown) { L.shown = true; showResult(L.res); } }
@@ -142,45 +164,108 @@ function update(dt) {
   S.fx = S.fx.filter(f => (f.t += dt) < 0.9); S.shake = Math.max(0, S.shake - dt);
 }
 function render() {
-  const st = stage(); ctx.save();
+  const st = stage(), boss = S.boss && ['bossIntro', 'fight'].includes(S.mode); ctx.save();
   if (S.shake) ctx.translate((Math.random() - 0.5) * 8 * S.shake, (Math.random() - 0.5) * 6 * S.shake);
-  drawScene(ctx, W, H, st, S.t, { shadows: S.mode === 'wait' || S.mode === 'idle' });
-  // 찌와 줄
-  const s = Math.min(H * 0.36, W * 0.26), ax = W * 0.44, ay = H * 0.97;
-  const av = { animal: ANIMALS.find(a => a.id === save.animal) || ANIMALS[0], hat: save.eq.hat, outfit: save.eq.outfit, acc: save.eq.acc, rod: save.eq.rod };
-  const pose = S.mode === 'aim' ? 'aim' : S.mode === 'cast' && S.modeT < 0.35 ? 'cast' : S.mode === 'fight' ? 'pull' : S.mode === 'landed' ? 'cheer' : 'idle';
-  const tip = drawAngler(ctx, ax, ay, s, av, pose, S.t, ITEM_BY_ID);
+  drawScene(ctx, W, H, st, S.t, { shadows: S.mode === 'wait' || S.mode === 'idle', storm: boss });
+  if (boss) bossBackdrop();
+  const pose = S.mode === 'aim' ? 'aim' : S.mode === 'cast' && S.modeT < 0.45 ? 'cast' : S.mode === 'fight' || S.mode === 'bossIntro' ? 'pull' : S.mode === 'landed' ? 'cheer' : S.mode === 'wait' || S.mode === 'bite' ? 'wait' : 'idle';
+  const tip = player(pose);
   if (S.mode === 'aim') gaugeView();
-  if (['cast', 'wait', 'bite', 'fight'].includes(S.mode)) {
+  if (S.castFx) castFxView();
+  if (['cast', 'wait', 'bite', 'fight', 'bossIntro'].includes(S.mode)) {
     let bx = W * S.bobX, by = H * S.bobY;
     if (S.mode === 'cast') { const u = Math.min(1, S.modeT / 0.6); bx = tip.x + (bx - tip.x) * u; by = tip.y + (by - tip.y) * u - Math.sin(u * Math.PI) * H * (0.1 + 0.15 * (S.castRes ? S.castRes.power : 0.5)); }
     if (S.mode === 'fight') { bx += Math.sin(S.t * 7) * W * 0.02 * (S.battle.x - 0.5) * 4; by += Math.sin(S.t * 13) * 3; }
+    if (S.mode === 'bossIntro') { bx += Math.sin(S.t * 23) * 6; by += Math.sin(S.t * 31) * 4; }
     const dip = S.mode === 'bite' ? 6 + Math.sin(S.modeT * 30) * 4 : S.mode === 'wait' ? Math.sin(S.t * 3) * 1.5 : 0;
-    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.quadraticCurveTo((tip.x + bx) / 2, Math.max(tip.y, by) - (S.mode === 'fight' ? -20 : 30), bx, by + dip); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.quadraticCurveTo((tip.x + bx) / 2, Math.max(tip.y, by) - (S.mode === 'fight' || S.mode === 'bossIntro' ? -20 : 30), bx, by + dip); ctx.stroke();
     const fl = ITEM_BY_ID[save.eq.float];
-    if (S.mode !== 'fight') { ctx.fillStyle = fl.color; ctx.strokeStyle = 'rgba(40,30,40,.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(bx, by + dip, 6, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#E8545A'; ctx.beginPath(); ctx.ellipse(bx, by + dip - 5, 6, 4, 0, Math.PI, 0); ctx.fill();
+    if (S.mode !== 'fight' && S.mode !== 'bossIntro') { ctx.fillStyle = fl.color; ctx.strokeStyle = 'rgba(40,30,40,.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(bx, by + dip, 6, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#E8545A'; ctx.beginPath(); ctx.ellipse(bx, by + dip - 5, 6, 4, 0, Math.PI, 0); ctx.fill();
       ctx.strokeStyle = 'rgba(255,255,255,.5)'; for (let k = 0; k < 2; k++) { const r = ((S.t * 0.8 + k * 0.5) % 1); ctx.globalAlpha = 1 - r; ctx.beginPath(); ctx.ellipse(bx, by + 8, 10 + r * 26, 3 + r * 6, 0, 0, Math.PI * 2); ctx.stroke(); } ctx.globalAlpha = 1; }
     if (S.mode === 'bite') { ctx.fillStyle = '#fff'; ctx.font = 'bold 44px Galmuri11, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('!', bx, by - 26 - Math.abs(Math.sin(S.modeT * 12)) * 8); splash(bx, by + 6, S.modeT); }
     if (S.mode === 'fight') fightView(bx, by);
+    if (S.mode === 'bossIntro') bossIntroView(bx, by);
   }
+  if (S.reel) { const u = Math.min(1, S.reel.t / 0.45), x = S.reel.from[0] + (tip.x - S.reel.from[0]) * u, y = S.reel.from[1] + (tip.y - S.reel.from[1]) * u - Math.sin(u * Math.PI) * 40;   // 거두는 찌
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(x, y); ctx.stroke(); ctx.fillStyle = ITEM_BY_ID[save.eq.float].color; ctx.beginPath(); ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill(); }
   if (S.mode === 'landed' && S.land) landedView(tip);
   drawParts();
+  if (S.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${S.flash * 0.6})`; ctx.fillRect(-20, -20, W + 40, H + 40); }
   ctx.restore();
 }
-// ---------------------------------------------------------------- 힘 게이지
+// ---------------------------------------------------------------- 낚시꾼 (3D 뒷모습)
+function player(pose) {
+  const av = { g: save.gender || 'm', hat: save.eq.hat, outfit: save.eq.outfit, acc: save.eq.acc, rod: save.eq.rod };
+  if (!toy) {   // 3D가 없을 때: 예전 2D 그림
+    const s = Math.min(H * 0.36, W * 0.26); return drawAngler(ctx, W * 0.44, H * 0.97, s, { ...av, animal: ANIMALS[0] }, pose === 'wait' ? 'idle' : pose, S.t, ITEM_BY_ID);
+  }
+  const port = H > W * 1.1, ch = port ? Math.min(H * 0.5, W * 0.95) : Math.min(H * 0.62, W * 0.6), cw = ch * 1.5, left = W * (port ? 0.4 : 0.36) - cw * 0.72, top = H - ch * 0.97 - (port ? H * 0.06 : 0);
+  const rh = Math.min(560, Math.round(ch * Math.min(DPR, 1.5))), rw = Math.round(rh * 1.5);
+  const r = toy.angler(av, ITEM_BY_ID, pose, S.t, S.dt || 0.016, rw, rh);
+  ctx.drawImage(r.canvas, 0, 0, rw, rh, left, top, cw, ch);
+  return r.tip ? { x: left + r.tip.x * cw, y: top + r.tip.y * ch } : { x: W * 0.6, y: H * 0.5 };
+}
+// ---------------------------------------------------------------- 던지기 막대 (가운데에서 멈추기)
 function gaugeView() {
-  const v = G.castGauge(S.modeT), sweet = G.CAST.sweet + ST.far * 0.3;
-  const w = Math.min(460, W * 0.62), h = 26, x = (W - w) / 2, y = Math.max(120, H * 0.22);
-  ctx.fillStyle = 'rgba(20,30,40,.5)'; rr(x - 10, y - 34, w + 20, h + 48, 18); ctx.fill();
-  const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, '#7FC8EE'); g.addColorStop(0.6, '#8AD86A'); g.addColorStop(1, '#F2C23A');
-  ctx.fillStyle = 'rgba(255,255,255,.2)'; rr(x, y, w, h, 13); ctx.fill();
-  ctx.save(); rr(x, y, w, h, 13); ctx.clip(); ctx.fillStyle = g; ctx.fillRect(x, y, w * v, h);
-  ctx.fillStyle = `rgba(255,214,80,${0.45 + 0.25 * Math.sin(S.t * 10)})`; ctx.fillRect(x + w * (1 - sweet), y, w * sweet, h); ctx.restore();
-  ctx.strokeStyle = '#FFE680'; ctx.lineWidth = 2; ctx.strokeRect(x + w * (1 - sweet), y, w * sweet, h);
-  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(x + w * v, y - 4); ctx.lineTo(x + w * v - 8, y - 16); ctx.lineTo(x + w * v + 8, y - 16); ctx.fill();
-  ctx.font = '14px Galmuri11, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText('가까이', x, y - 12);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#FFE680'; ctx.fillText('멀리! NICE', x + w, y - 12);
-  ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(S.aimBoss ? '👑 보스 도전 — 좋은 때 눌러서 던지기' : '좋은 때 한 번 더 눌러서 던지기 · 멀리 던질수록 드문 물고기', W / 2, y + h + 18);
+  const v = G.castGauge(S.modeT, save.stage), z = G.castZones(ST);
+  const w = Math.min(520, W * 0.78), h = 30, x = (W - w) / 2, y = Math.max(118, H * 0.22), cx = x + w / 2;
+  ctx.fillStyle = 'rgba(20,30,40,.55)'; rr(x - 14, y - 40, w + 28, h + 70, 20); ctx.fill();
+  ctx.save(); rr(x, y, w, h, 15); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x, y, w, h);
+  const band = (k, col) => { ctx.fillStyle = col; ctx.fillRect(cx - w / 2 * k, y, w * k, h); };
+  band(z.good, 'rgba(122,208,106,.55)'); band(z.great, 'rgba(90,180,242,.75)'); band(z.perfect, `rgba(255,214,80,${0.8 + 0.2 * Math.sin(S.t * 12)})`);
+  for (let i = 1; i < 20; i++) { ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x + w * i / 20, y + h - 6, 1, 6); }
+  ctx.restore();
+  ctx.strokeStyle = '#FFE680'; ctx.lineWidth = 2; ctx.strokeRect(cx - w / 2 * z.perfect, y - 3, w * z.perfect, h + 6);
+  // 별 (왔다 갔다)
+  const sx = x + w * v; ctx.save(); ctx.translate(sx, y + h / 2); ctx.rotate(S.t * 5); ctx.fillStyle = '#FFF6C8'; ctx.strokeStyle = '#B8860B'; ctx.lineWidth = 2;
+  ctx.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 7 : 17; ctx.lineTo(Math.cos(k * Math.PI / 5 - Math.PI / 2) * r, Math.sin(k * Math.PI / 5 - Math.PI / 2) * r); } ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  ctx.font = '14px Galmuri11, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#FFE680'; ctx.fillText('PERFECT', cx, y - 12);
+  ctx.fillStyle = '#fff'; ctx.fillText(W < 640 ? '별이 가운데 올 때 누르기!' : '별이 가운데 왔을 때 눌러서 던지기 · 가운데일수록 멀리, 드문 물고기와 보스가 더 와요', W / 2, y + h + 22);
+}
+function castFxView() {   // 던진 결과 글자
+  const { t, c } = S.castFx, k = Math.min(1, t / 0.2), a = t > 0.8 ? 1 - (t - 0.8) / 0.4 : 1;
+  const y = Math.max(118, H * 0.22) + 14, txt = { perfect: 'PERFECT!', great: 'GREAT!', good: 'GOOD', bad: 'BAD' }[c.grade], col = { perfect: '#FFD650', great: '#7FD0FF', good: '#9AE07A', bad: '#C8C8D0' }[c.grade];
+  ctx.save(); ctx.globalAlpha = Math.max(0, a); ctx.translate(W / 2, y - t * 30); ctx.scale(0.6 + k * 0.5, 0.6 + k * 0.5); ctx.textAlign = 'center'; ctx.font = `bold ${c.perfect ? 54 : 42}px Galmuri11, sans-serif`;
+  ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(30,20,40,.75)'; ctx.strokeText(txt, 0, 0); ctx.fillStyle = col; ctx.fillText(txt, 0, 0); ctx.restore();
+}
+// ---------------------------------------------------------------- 보스 연출
+function roar() {   // 체력 60%·30%: 포효 → 화면 흔들림, 번쩍, 더 빨라짐
+  S.roarT = 0; S.shake = 0.9; S.flash = 0.5; snd.roar(); haptic('roar');
+  say(S.battle.phase >= 2 ? `🔥 ${S.fish.name}이(가) 미쳐 날뛰어요!` : `💢 ${S.fish.name}의 포효! 더 빨라졌어요`, 'boss', 1500);
+}
+function bossBackdrop() {   // 어두워진 하늘 · 붉은 가장자리 · 물 밑의 거대한 그림자
+  const intro = S.mode === 'bossIntro', k = intro ? Math.min(1, S.modeT / 0.8) : 1, pulse = 0.5 + 0.5 * Math.sin(S.t * 3);
+  ctx.fillStyle = `rgba(20,8,30,${0.38 * k})`; ctx.fillRect(0, 0, W, H);
+  const g = ctx.createRadialGradient(W / 2, H * 0.5, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+  g.addColorStop(0, 'rgba(200,30,40,0)'); g.addColorStop(1, `rgba(200,30,40,${(0.25 + 0.2 * pulse) * k + (S.roarT < 0.6 ? 0.3 * (1 - S.roarT / 0.6) : 0)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (S.mode === 'fight' && S.battle) {   // 수면 아래를 맴도는 커다란 몸
+    const b = S.battle, len = Math.min(W * 0.75, H * 1.1), x = W * (0.2 + b.x * 0.6), y = H * 0.56 + Math.sin(S.t * 0.9) * 10;
+    ctx.save(); ctx.globalAlpha = 0.28; ctx.filter = 'brightness(0.15) blur(2px)'; drawFish(ctx, S.fish, x, y, len, { t: S.t, flip: b.dir < 0 }); ctx.restore(); ctx.filter = 'none';
+  }
+}
+function bossIntroView(bx, by) {   // 등장: 물이 솟구치고 거대한 보스가 떠오른 뒤 이름판
+  const t = S.modeT, f = S.fish, big = Math.min(W * 0.8, H * 1.05);
+  if (t < 2.9) { const u = Math.min(1, t / 1.3), rise = 1 - Math.pow(1 - u, 3), y = H * 0.75 - rise * H * 0.3;
+    ctx.save(); ctx.globalAlpha = Math.min(1, t / 0.4) * (t > 2.4 ? 1 - (t - 2.4) / 0.5 : 1);
+    // 뒤에서 솟는 빛
+    ctx.translate(W / 2, y); ctx.rotate(t * 0.3); for (let i = 0; i < 16; i++) { ctx.rotate(Math.PI / 8); ctx.fillStyle = i % 2 ? 'rgba(255,214,120,.25)' : 'rgba(255,120,80,.18)'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-big * 0.08, big); ctx.lineTo(big * 0.08, big); ctx.fill(); }
+    ctx.restore(); ctx.save(); ctx.globalAlpha = Math.min(1, t / 0.5) * (t > 2.4 ? 1 - (t - 2.4) / 0.5 : 1);
+    drawFish(ctx, f, W / 2, y, big * (0.75 + 0.25 * rise), { t: S.t * 0.6, rot: Math.sin(t * 2) * 0.05 }); ctx.restore();
+    if (t < 1.6) for (let i = 0; i < 3; i++) burst(W / 2 + (Math.random() - 0.5) * big * 0.7, H * 0.6, 2, '#FFFFFF', 520, 'drop');
+  }
+  if (t > 0.9) {   // 경고 띠 + 이름판
+    const k = Math.min(1, (t - 0.9) / 0.35), y = H * 0.3, bh = Math.min(120, H * 0.18);
+    ctx.save(); ctx.globalAlpha = k * (t > 2.9 ? Math.max(0, 1 - (t - 2.9) / 0.3) : 1);
+    ctx.fillStyle = 'rgba(20,6,10,.78)'; ctx.fillRect(0, y - bh / 2, W, bh);
+    ctx.fillStyle = '#E8303A'; ctx.fillRect(0, y - bh / 2, W, 5); ctx.fillRect(0, y + bh / 2 - 5, W, 5);
+    ctx.font = `bold ${Math.round(bh * 0.15)}px Galmuri11, sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#FF8A7A';
+    const off = (S.t * 120) % 200; for (let x = -200 + off; x < W + 200; x += 200) ctx.fillText('⚠ WARNING ⚠', x, y - bh * 0.3);
+    const sc = 1 + Math.max(0, 0.4 - (t - 0.9)) * 1.5; ctx.translate(W / 2, y + bh * 0.12); ctx.scale(sc, sc);
+    ctx.font = `bold ${Math.round(bh * 0.36)}px Galmuri11, sans-serif`; ctx.lineWidth = 8; ctx.strokeStyle = '#3A1010'; ctx.strokeText(`👑 ${f.name}`, 0, 0); ctx.fillStyle = '#FFE27A'; ctx.fillText(`👑 ${f.name}`, 0, 0);
+    ctx.font = `${Math.round(bh * 0.13)}px Galmuri11, sans-serif`; ctx.fillStyle = '#F2E6D8'; ctx.fillText(`${stage().name}의 주인이 나타났다!`, 0, bh * 0.3);
+    ctx.restore();
+  }
 }
 // ---------------------------------------------------------------- 잡았을 때 연출
 function burst(x, y, n, col, sp, kind = 'dot') {
@@ -204,7 +289,7 @@ const ease = u => 1 - Math.pow(1 - Math.min(1, Math.max(0, u)), 3);
 function landedView(tip) {
   const L = S.land, f = L.res.fish, g = L.res.roll.grade, t = L.t, u = ease(t / 0.9);
   // 줄이 물고기를 끌어 올림
-  const big = Math.min(W * 0.5, H * 0.55) * (f.look.shape === 'flat' || f.look.shape === 'round' ? 0.7 : 1);
+  const big = Math.min(W * 0.5, H * 0.55) * (['flat', 'round', 'horse', 'jelly', 'crab'].includes(f.look.shape) ? 0.7 : 1) * (f.tier === 'boss' ? 1.2 : 1);
   const x = L.from[0] + (W / 2 - L.from[0]) * u, y = L.from[1] + (H * 0.42 - L.from[1]) * u - Math.sin(Math.min(1, t / 0.9) * Math.PI) * H * 0.18;
   const len = big * (0.35 + 0.65 * u), rot = (1 - u) * -2.4 + Math.sin(t * 3) * 0.06;
   ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(x, y - len * 0.1); ctx.stroke();
@@ -231,21 +316,34 @@ function splash(x, y, t) { ctx.fillStyle = 'rgba(255,255,255,.8)'; for (let i = 
 function fightView(bx, by) {
   const b = S.battle, f = b.fish, L = laneRect();
   // 물 위로 뛰어오르는 물고기 (가끔)
-  const jump = Math.max(0, Math.sin(S.t * 1.7)) ** 6;
-  if (jump > 0.05) { const len = Math.min(220, 60 + f.size[1] * 0.4) * (f.tier === 'boss' ? 1.3 : 1); ctx.save(); ctx.globalAlpha = Math.min(1, jump * 2); drawFish(ctx, f, bx + (b.x - 0.5) * 120, by - jump * H * 0.12, len * (0.5 + 0.5 * S.roll.p), { t: S.t, flip: b.dir < 0, rot: (b.dir < 0 ? 1 : -1) * 0.3 * Math.cos(S.t * 1.7) }); ctx.restore(); splash(bx + (b.x - 0.5) * 120, by + 6, S.t); }
+  const jump = Math.max(0, Math.sin(S.t * (f.tier === 'boss' ? 1.1 : 1.7))) ** 6;
+  if (jump > 0.05) { const len = f.tier === 'boss' ? Math.min(W * 0.45, H * 0.6) : Math.min(220, 60 + f.size[1] * 0.4); ctx.save(); ctx.globalAlpha = Math.min(1, jump * 2); drawFish(ctx, f, bx + (b.x - 0.5) * 120, by - jump * H * 0.12, len * (0.5 + 0.5 * S.roll.p), { t: S.t, flip: b.dir < 0, rot: (b.dir < 0 ? 1 : -1) * 0.3 * Math.cos(S.t * 1.7) }); ctx.restore(); splash(bx + (b.x - 0.5) * 120, by + 6, S.t); }
   // 위쪽: 체력·시간
-  const hw = Math.min(W * 0.62, 620), hx = (W - hw) / 2, hy = Math.max(60, H * 0.1);
-  ctx.fillStyle = 'rgba(20,30,40,.55)'; rr(hx - 4, hy - 4, hw + 8, 26, 13); ctx.fill();
-  const pct = b.hp / b.maxHp, g = ctx.createLinearGradient(hx, 0, hx + hw, 0); g.addColorStop(0, pct < 0.3 ? '#F25A4A' : '#6BD04A'); g.addColorStop(1, pct < 0.3 ? '#F2A04A' : '#B8F25A');
-  ctx.fillStyle = g; rr(hx, hy, hw * pct, 18, 9); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.font = '13px Galmuri11, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`${f.name}  ${b.hp}/${b.maxHp}`, hx + 10, hy + 14);
-  ctx.textAlign = 'right'; ctx.fillText(`${S.roll.size}cm  ${S.roll.grade.g}`, hx + hw - 10, hy + 14);
+  const isB = f.tier === 'boss', hw = Math.min(W * 0.62, 620), hx = (W - hw) / 2, hy = Math.max(60, H * 0.1) + (isB ? 10 : 0), bh = isB ? 24 : 18;
+  const pct = b.hp / b.maxHp, g = ctx.createLinearGradient(hx, 0, hx + hw, 0);
+  if (isB) {   // 보스 체력: 금테 · 이름판 · 포효 눈금
+    ctx.fillStyle = 'rgba(30,10,14,.8)'; rr(hx - 8, hy - 8, hw + 16, bh + 16, 14); ctx.fill(); ctx.strokeStyle = '#F2C23A'; ctx.lineWidth = 3; rr(hx - 8, hy - 8, hw + 16, bh + 16, 14); ctx.stroke();
+    g.addColorStop(0, '#C8203A'); g.addColorStop(0.5, '#F25A3A'); g.addColorStop(1, '#F2A23A');
+    ctx.fillStyle = g; rr(hx, hy, Math.max(0.01, hw * pct), bh, 8); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.25)'; rr(hx, hy, Math.max(0.01, hw * pct), bh * 0.4, 6); ctx.fill();
+    for (const m of [0.6, 0.3]) { ctx.fillStyle = pct < m ? 'rgba(255,255,255,.25)' : '#FFE27A'; ctx.fillRect(hx + hw * m - 1.5, hy - 4, 3, bh + 8); }
+    ctx.font = 'bold 15px Galmuri11, sans-serif'; ctx.textAlign = 'center'; const nm = `👑 ${f.name}`, nw = ctx.measureText(nm).width + 30;
+    ctx.fillStyle = '#F2C23A'; rr(W / 2 - nw / 2, hy - 30, nw, 24, 12); ctx.fill(); ctx.fillStyle = '#3A1E0A'; ctx.fillText(nm, W / 2, hy - 12);
+    ctx.fillStyle = '#fff'; ctx.font = '13px Galmuri11, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`${b.hp}/${b.maxHp}`, hx + 10, hy + bh - 6);
+    ctx.textAlign = 'right'; ctx.fillText(`${S.roll.size}cm  ${S.roll.grade.g}`, hx + hw - 10, hy + bh - 6);
+  } else {
+    ctx.fillStyle = 'rgba(20,30,40,.55)'; rr(hx - 4, hy - 4, hw + 8, 26, 13); ctx.fill();
+    g.addColorStop(0, pct < 0.3 ? '#F25A4A' : '#6BD04A'); g.addColorStop(1, pct < 0.3 ? '#F2A04A' : '#B8F25A');
+    ctx.fillStyle = g; rr(hx, hy, hw * pct, 18, 9); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = '13px Galmuri11, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`${f.name}  ${b.hp}/${b.maxHp}`, hx + 10, hy + 14);
+    ctx.textAlign = 'right'; ctx.fillText(`${S.roll.size}cm  ${S.roll.grade.g}`, hx + hw - 10, hy + 14);
+  }
   // 시간 원
-  const tx = hx + hw + 40, ty = hy + 9; ctx.fillStyle = 'rgba(20,30,40,.55)'; ctx.beginPath(); ctx.arc(tx, ty, 26, 0, 7); ctx.fill();
+  const tx = hx + hw + 40, ty = hy + bh / 2; ctx.fillStyle = 'rgba(20,30,40,.55)'; ctx.beginPath(); ctx.arc(tx, ty, 26, 0, 7); ctx.fill();
   ctx.strokeStyle = b.time < 5 ? '#F25A4A' : '#9FE0FF'; ctx.lineWidth = 5; ctx.beginPath(); ctx.arc(tx, ty, 22, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * b.time / b.maxTime); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 20px Galmuri11, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(Math.ceil(b.time), tx, ty + 7);
   // 하트 (줄 버팀)
-  for (let i = 0; i < b.maxHearts; i++) heart(hx + 12 + i * 30, hy + 44, 11, i < b.hearts);
+  for (let i = 0; i < b.maxHearts; i++) heart(hx + 12 + i * 30, hy + bh + 26, 11, i < b.hearts);
   // 레인
   ctx.fillStyle = 'rgba(10,40,60,.35)'; rr(L.x - 14, L.y - 18, L.w + 28, L.h + 36, 22); ctx.fill();
   if (S.laneFlash) { ctx.fillStyle = `rgba(${S.laneFlash.col},${0.45 * (1 - S.laneFlash.t / 0.25)})`; rr(L.x - 14, L.y - 18, L.w + 28, L.h + 36, 22); ctx.fill(); }
@@ -276,7 +374,7 @@ function showResult(res) {
   const f = res.fish, g = res.roll.grade;
   $('resTop').innerHTML = `${res.newDex ? '<span class="new">NEW 도감!</span>' : ''}${res.newBest ? '<span class="new best">최고 기록!</span>' : ''}${f.tier === 'boss' ? '<span class="new boss">👑 보스</span>' : ''}`;
   const c = $('resFish'), x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height);
-  drawFish(x, f, c.width / 2, c.height / 2, f.look.shape === 'flat' || f.look.shape === 'round' ? 230 : 380, { t: 0.2, shadow: true });
+  drawFish(x, f, c.width / 2, c.height / 2, ['flat', 'round', 'horse', 'jelly', 'crab'].includes(f.look.shape) ? 210 : 380, { t: 0.2, shadow: true });
   $('resInfo').innerHTML = `<h2>${f.name} <span class="grade g${g.g}">${g.g}</span></h2><p class="size">${res.roll.size}cm <small>(${f.size[0]}~${f.size[1]}cm)</small> · ${TIERS[f.tier].name}</p><p class="desc">${f.desc}</p>
     <p class="coin">🪙 ${res.coins.toLocaleString()} ${res.autoSold ? '<small>(가방이 꽉 차서 바로 팔았어요)</small>' : '<small>가방에 넣었어요</small>'}</p>`;
   let ex = `<div class="expLine">⭐ +${res.exp} EXP${res.levelUps.length ? ` · <b>레벨 업! Lv.${res.levelUps[res.levelUps.length - 1]}</b> (🪙 +${res.levelUps.reduce((a, l) => a + l * 100, 0).toLocaleString()})` : ''}</div>`;
@@ -295,7 +393,7 @@ const nameOf = id => (ITEM_BY_ID[id] || BAIT_BY_ID[id] || {}).name || id;
 let sheetKind = null, sheetTab = null;
 function openSheet(kind, tab) {
   if (S.mode !== 'idle' && !['dex', 'title'].includes(kind)) { say('낚시가 끝난 뒤에 열 수 있어요', 'warn'); return; }
-  sheetKind = kind; sheetTab = tab || ({ shop: 'rod', dex: '1', dress: 'avatar' }[kind] || null); $('sheet').hidden = false; snd.click(); drawSheet();
+  sheetKind = kind; sheetTab = tab || ({ shop: 'rod', dex: String(save.stage), dress: 'char' }[kind] || null); $('sheet').hidden = false; snd.click(); drawSheet();
 }
 function closeSheet() { $('sheet').hidden = true; sheetKind = null; }
 document.querySelector('#sheet .close').onclick = closeSheet;
@@ -322,18 +420,18 @@ function drawSheet() {
   else if (sheetKind === 'shop') {
     $('sheetTitle').textContent = `🏪 상점 · 🪙 ${save.coins.toLocaleString()}`;
     tabs([['rod', '낚싯대'], ['line', '줄'], ['float', '찌'], ['bait', '미끼'], ['wear', '꾸미기']]);
-    const list = sheetTab === 'bait' ? BAITS.filter(b => b.price) : ITEMS.filter(i => (sheetTab === 'wear' ? ['hat', 'outfit', 'acc'].includes(i.slot) : i.slot === sheetTab) && !i.start);
+    const list = sheetTab === 'bait' ? BAITS.filter(b => b.price && b.shop !== false) : ITEMS.filter(i => (sheetTab === 'wear' ? ['hat', 'outfit', 'acc'].includes(i.slot) : i.slot === sheetTab) && !i.start);
     B.innerHTML = `<div class="list">${list.map(it => {
       const isBait = !!BAIT_BY_ID[it.id], have = isBait ? (save.items[it.id] || 0) : G.owned(save, it.id);
       const how = isBait ? `${it.pack}개 🪙${it.price.toLocaleString()}` : it.shop ? `🪙 ${it.shop.toLocaleString()}` : it.drop ? '🎁 드랍으로만' : '📖 도감 세트 보상';
       const btn = isBait ? `<button class="btn" data-buy="${it.id}" ${save.coins < it.price ? 'disabled' : ''}>사기</button>` : have ? `<span class="tag">가지고 있음</span>` : it.shop ? `<button class="btn" data-buy="${it.id}" ${save.coins < it.shop ? 'disabled' : ''}>사기</button>` : `<span class="tag lock">🔒</span>`;
-      return `<div class="item ${!isBait && !it.shop && !have ? 'locked' : ''}"><div class="ico" style="--c:${it.color || '#ddd'}">${iconFor(it)}</div><div class="txt"><b>${it.name}</b>${isBait ? '' : `<div>${statLine(it.stats)}</div>`}<small>${it.desc}</small>${isBait ? `<small>가진 개수 ${have}</small>` : ''}</div><div class="how">${how}${btn}</div></div>`;
+      return `<div class="item ${!isBait && !it.shop && !have ? 'locked' : ''}"><div class="ico" style="--c:${it.color || '#ddd'}">${iconFor(it)}</div><div class="txt"><b>${it.name}</b>${isBait ? `<div><span class="st">👑 보스 ${pct(it.boss)}</span></div>` : `<div>${statLine(it.stats)}</div>`}<small>${it.desc}</small>${isBait ? `<small>가진 개수 ${have}</small>` : ''}</div><div class="how">${how}${btn}</div></div>`;
     }).join('')}</div>`;
     B.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => { const r = G.buy(save, b.dataset.buy); if (!r.ok) { say(r.why, 'warn'); return; } persist(); snd.coin(); say(`${nameOf(b.dataset.buy)} 샀어요!`, 'good'); drawSheet(); });
   }
   else if (sheetKind === 'dex') {
     const [a, n] = G.dexCount(save); $('sheetTitle').textContent = `📖 도감 ${a}/${n}`;
-    tabs([...STAGES.map(s => [String(s.id), s.name]), ['sets', '세트 보상']]);
+    tabs([...STAGES.map(s => [String(s.id), STAGE_ICON[s.id - 1] + ' ' + s.name]), ['sets', '세트 보상']]);
     if (sheetTab === 'sets') {
       B.innerHTML = `<div class="list">${SETS.map(s => { const [h, t] = G.setProgress(save, s), done = save.sets[s.id];
         const rw = `🪙${(s.reward.coins || 0).toLocaleString()}${Object.entries(s.reward.items || {}).map(([k, n]) => ' · ' + nameOf(k) + (n > 1 ? ' ×' + n : '')).join('')}`;
@@ -341,29 +439,29 @@ function drawSheet() {
     } else {
       const sid = +sheetTab, locked = sid > save.unlocked;
       B.innerHTML = (locked ? `<p class="empty">🔒 앞 바다의 보스를 잡으면 열려요</p>` : '') + `<div class="grid dex">${FISH.filter(f => f.stage === sid).map(f => { const d = save.dex[f.id];
-        return `<div class="cell ${d ? '' : 'unk'} t-${f.tier}" data-fish="${f.id}"><img src="${thumb(f, !!d)}"><b>${d ? f.name : '？？？'}</b><span>${d ? `최대 ${d.max}cm <i class="grade g${d.best}">${d.best}</i>` : TIERS[f.tier].name}</span></div>`; }).join('')}</div><div id="dexInfo"></div>`;
-      B.querySelectorAll('[data-fish]').forEach(c => c.onclick = () => { const f = FISH_BY_ID[c.dataset.fish], d = save.dex[f.id]; $('dexInfo').innerHTML = d ? `<div class="info"><img src="${thumb(f, true)}"><div><b>${f.name}</b> <small>${TIERS[f.tier].name} · ${f.size[0]}~${f.size[1]}cm</small><p>${f.desc}</p><small>잡은 수 ${d.n} · 가장 큰 것 ${d.max}cm · 최고 등급 ${d.best}</small></div></div>` : `<div class="info"><p>아직 못 잡은 물고기예요. ${TIERS[f.tier].name} 등급${f.tier === 'boss' ? ' · 황금 미끼로 보스 도전!' : ['r', 'e'].includes(f.tier) ? ' · 좋은 미끼를 써 보세요' : ''}</p></div>`; });
+        return `<div class="cell ${d ? '' : 'unk'} t-${f.tier}" data-fish="${f.id}"><img src="${thumb(f, !!d)}"><b>${d ? f.name : '？？？'}</b><span>${d ? `최대 ${d.max}cm <i class="grade g${d.best}">${d.best}</i>` : TIERS[f.tier].name}${f.bait ? ' · ' + baitIcon(f.bait[0]) + ' 전용' : ''}</span></div>`; }).join('')}</div><div id="dexInfo"></div>`;
+      B.querySelectorAll('[data-fish]').forEach(c => c.onclick = () => { const f = FISH_BY_ID[c.dataset.fish], d = save.dex[f.id]; $('dexInfo').innerHTML = d ? `<div class="info"><img src="${thumb(f, true)}"><div><b>${f.name}</b> <small>${TIERS[f.tier].name} · ${f.size[0]}~${f.size[1]}cm</small><p>${f.desc}</p><small>잡은 수 ${d.n} · 가장 큰 것 ${d.max}cm · 최고 등급 ${d.best}</small></div></div>` : `<div class="info"><p>아직 못 잡은 물고기예요. ${TIERS[f.tier].name} 등급${f.bait ? ` · ${f.bait.map(b => baitIcon(b) + ' ' + BAIT_BY_ID[b].name).join(', ')}(으)로만 낚여요` : f.tier === 'boss' ? ' · 낚시하다 보면 우연히 나타나요 (황금 미끼·잘 던지기면 더 자주)' : ['r', 'e'].includes(f.tier) ? ' · 좋은 미끼를 써 보세요' : ''}</p></div>`; });
     }
   }
   else if (sheetKind === 'dress') {
     $('sheetTitle').textContent = '👕 꾸미기 · 장비';
-    tabs([['avatar', '동물'], ['rod', '낚싯대'], ['line', '줄'], ['float', '찌'], ['hat', '모자'], ['outfit', '옷'], ['acc', '장신구']]);
+    tabs([['char', '캐릭터'], ['rod', '낚싯대'], ['line', '줄'], ['float', '찌'], ['hat', '모자'], ['outfit', '옷'], ['acc', '장신구']]);
     const tot = G.stats(save);
     let h = `<div class="dress"><canvas id="avPrev" width="320" height="320"></canvas><div class="tot"><b>내 능력치</b>${Object.entries(tot).map(([k, v]) => `<span class="st">${G.STAT_NAMES[k]} ${['pow', 'heart', 'time'].includes(k) ? v : Math.round(v * 100) + '%'}</span>`).join('')}</div></div>`;
-    if (sheetTab === 'avatar') h += `<div class="grid animals">${ANIMALS.map(a => `<button class="cell ${save.animal === a.id ? 'on' : ''}" data-animal="${a.id}"><canvas width="160" height="160" data-av="${a.id}"></canvas><b>${a.name}</b></button>`).join('')}</div>`;
+    if (sheetTab === 'char') h += `<div class="grid chars">${CHARACTERS.map(a => `<button class="cell ${save.gender === a.id ? 'on' : ''}" data-gender="${a.id}"><canvas width="200" height="240" data-av="${a.id}"></canvas><b>${a.name}</b></button>`).join('')}</div><p class="small">옷 색·모자·장신구는 캐릭터에 그대로 입혀져요.</p>`;
     else h += `<div class="list">${ITEMS.filter(i => i.slot === sheetTab).map(it => { const have = G.owned(save, it.id), on = save.eq[it.slot] === it.id;
       return `<div class="item ${have ? '' : 'locked'} ${on ? 'on' : ''}"><div class="ico" style="--c:${it.color}">${iconFor(it)}</div><div class="txt"><b>${it.name}</b><div>${statLine(it.stats)}</div><small>${it.desc}</small></div><div class="how">${on ? '<span class="tag">착용 중</span>' : have ? `<button class="btn" data-eq="${it.id}">쓰기</button>` : `<span class="tag lock">${it.shop ? '🏪 상점' : it.drop ? '🎁 드랍' : '📖 세트'}</span>`}</div></div>`; }).join('')}</div>`;
     B.innerHTML = h;
-    const pv = $('avPrev').getContext('2d'); const av = { animal: ANIMALS.find(a => a.id === save.animal), hat: save.eq.hat, outfit: save.eq.outfit, acc: save.eq.acc };
-    drawAvatarFront(pv, 160, 300, 300, av, ITEM_BY_ID, 0);
-    B.querySelectorAll('[data-av]').forEach(c => drawAvatarFront(c.getContext('2d'), 80, 150, 150, { ...av, animal: ANIMALS.find(a => a.id === c.dataset.av) }, ITEM_BY_ID, 0));
-    B.querySelectorAll('[data-animal]').forEach(b => b.onclick = () => { save.animal = b.dataset.animal; persist(); snd.click(); drawSheet(); });
+    const av = { g: save.gender || 'm', hat: save.eq.hat, outfit: save.eq.outfit, acc: save.eq.acc };
+    portraitInto($('avPrev'), av);
+    B.querySelectorAll('[data-av]').forEach(c => portraitInto(c, { ...av, g: c.dataset.av }));
+    B.querySelectorAll('[data-gender]').forEach(b => b.onclick = () => { save.gender = b.dataset.gender; persist(); snd.click(); drawSheet(); });
     B.querySelectorAll('[data-eq]').forEach(b => b.onclick = () => { G.equip(save, b.dataset.eq); persist(); snd.click(); drawSheet(); });
   }
   else if (sheetKind === 'stage') {
     $('sheetTitle').textContent = '🌊 바다 고르기';
     B.innerHTML = `<div class="list">${STAGES.map(s => { const lock = s.id > save.unlocked, got = FISH.filter(f => f.stage === s.id && save.dex[f.id]).length, tot = FISH.filter(f => f.stage === s.id).length;
-      return `<div class="item stage ${lock ? 'locked' : ''} ${save.stage === s.id ? 'on' : ''}" style="--a:${s.sea[0]};--b:${s.sky[0]}"><div class="ico">${['⛵', '🪸', '🌫️', '🌌'][s.id - 1]}</div><div class="txt"><b>${s.id}. ${s.name}</b><small>${s.desc}</small><small>도감 ${got}/${tot} · 보스 ${save.dex[s.boss] ? '✅ ' + FISH_BY_ID[s.boss].name : '？'}</small></div><div class="how">${lock ? '<span class="tag lock">🔒 앞 바다 보스</span>' : save.stage === s.id ? '<span class="tag">여기 있어요</span>' : `<button class="btn" data-stage="${s.id}">가기</button>`}</div></div>`; }).join('')}</div>`;
+      return `<div class="item stage ${lock ? 'locked' : ''} ${save.stage === s.id ? 'on' : ''}" style="--a:${s.sea[0]};--b:${s.sky[0]}"><div class="ico">${STAGE_ICON[s.id - 1]}</div><div class="txt"><b>${s.id}. ${s.name}</b><small>${s.desc}</small><small>도감 ${got}/${tot} · 보스 ${save.dex[s.boss] ? '✅ ' + FISH_BY_ID[s.boss].name : '？'}</small></div><div class="how">${lock ? '<span class="tag lock">🔒 앞 바다 보스</span>' : save.stage === s.id ? '<span class="tag">여기 있어요</span>' : `<button class="btn" data-stage="${s.id}">가기</button>`}</div></div>`; }).join('')}</div>`;
     B.querySelectorAll('[data-stage]').forEach(b => b.onclick = () => { save.stage = +b.dataset.stage; persist(); snd.stage(save.stage); closeSheet(); say(`🌊 ${stage().name}`, 'good'); });
   }
   else if (sheetKind === 'title') {
@@ -376,12 +474,15 @@ function drawSheet() {
   }
   else if (sheetKind === 'bait') {
     $('sheetTitle').textContent = '🪱 미끼 고르기';
-    B.innerHTML = `<div class="list">${BAITS.filter(b => !b.boss).map(b => { const n = save.items[b.id] || 0, can = b.price === 0 || n > 0, on = save.eq.bait === b.id;
-      return `<div class="item ${can ? '' : 'locked'} ${on ? 'on' : ''}"><div class="ico">${baitIcon(b.id)}</div><div class="txt"><b>${b.name}</b><small>${b.desc}</small></div><div class="how">${b.price ? '×' + n : '∞'}${on ? '<span class="tag">쓰는 중</span>' : can ? `<button class="btn" data-bait="${b.id}">쓰기</button>` : '<span class="tag lock">상점에서</span>'}</div></div>`; }).join('')}</div><p class="small">🌟 황금 미끼는 '보스 도전' 버튼으로 써요 (지금 ${save.items.bait4 || 0}개).</p>`;
+    const only = id => FISH.filter(f => f.bait && f.bait.includes(id));
+    B.innerHTML = `<div class="list">${BAITS.map(b => { const n = save.items[b.id] || 0, can = b.id === 'bait0' || n > 0, on = save.eq.bait === b.id, sp = only(b.id);
+      return `<div class="item ${can ? '' : 'locked'} ${on ? 'on' : ''}"><div class="ico">${baitIcon(b.id)}</div><div class="txt"><b>${b.name}</b><div><span class="st">👑 보스 ${pct(G.bossChance(b.id, ST, null, save.calm))}</span>${sp.length ? `<span class="st">이 미끼로만: ${sp.map(f => save.dex[f.id] ? f.name : '？？？').join(', ')}</span>` : ''}</div><small>${b.desc}</small></div><div class="how">${b.id !== 'bait0' ? '×' + n : '∞'}${on ? '<span class="tag">쓰는 중</span>' : can ? `<button class="btn" data-bait="${b.id}">쓰기</button>` : `<span class="tag lock">${b.shop === false ? '🎁 드랍' : '🏪 상점'}</span>`}</div></div>`; }).join('')}</div>
+      <p class="small">👑 보스는 낚시하다가 우연히 나타나요. 미끼마다 확률이 다르고, 가운데로 잘 던질수록·행운이 높을수록·보스를 오래 못 만났을수록 조금씩 더 자주 나와요.</p>`;
     B.querySelectorAll('[data-bait]').forEach(b => b.onclick = () => { G.equip(save, b.dataset.bait); persist(); snd.click(); closeSheet(); });
   }
 }
-function iconFor(it) { return { rod: '🎣', line: '🧵', float: '🔴', hat: '🎩', outfit: '👕', acc: '💍' }[it.slot] || { bait1: '🪱', bait2: '🦐', bait3: '✨', bait4: '🌟' }[it.id] || '🎁'; }
+function iconFor(it) { return { rod: '🎣', line: '🧵', float: '🔴', hat: '🎩', outfit: '👕', acc: '💍' }[it.slot] || (BAIT_BY_ID[it.id] ? baitIcon(it.id) : '🎁'); }
+function portraitInto(c, av, o) { const x = c.getContext('2d'); if (toy) toy.portrait(av, ITEM_BY_ID, c, o); else { x.clearRect(0, 0, c.width, c.height); drawAvatarFront(x, c.width / 2, c.height * 0.94, c.height * 0.9, { ...av, animal: ANIMALS[av.g === 'f' ? 2 : 0] }, ITEM_BY_ID, 0); } }
 
 // ---------------------------------------------------------------- 입력
 $('btnAct').addEventListener('pointerdown', e => { e.preventDefault(); act(); });
@@ -389,17 +490,28 @@ cv.addEventListener('pointerdown', e => { e.preventDefault(); act(); });
 addEventListener('keydown', e => {
   if (e.repeat) return;
   if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); if (!$('intro').hidden) { start(); return; } act(); return; }
-  if (e.code === 'Escape') { if (!$('result').hidden) closeResult(); else closeSheet(); return; }
+  if (!$('intro').hidden && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) { save.gender = e.code === 'ArrowLeft' ? 'm' : 'f'; persist(); introChars(); return; }
+  if (e.code === 'Escape') { if (!$('result').hidden) closeResult(); else if (!$('sheet').hidden) closeSheet(); else cancelCast(); return; }
+  if (e.code === 'KeyX' && $('sheet').hidden && $('intro').hidden) { cancelCast(); return; }
   if (!$('intro').hidden || !$('result').hidden) return;
   const k = { KeyB: 'bag', KeyS: 'shop', KeyD: 'dex', KeyC: 'dress', KeyT: 'title' }[e.code]; if (k) { if (sheetKind === k) closeSheet(); else openSheet(k); }
 });
 document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSheet(b.dataset.open));
 $('btnStage').onclick = () => openSheet('stage'); $('lvPill').onclick = () => openSheet('title'); $('btnBait').onclick = () => openSheet('bait');
-$('btnBoss').onclick = () => { snd.init(); if (S.mode === 'idle') aim(true); };
+$('btnCancel').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); snd.init(); cancelCast(); });
 $('btnSound').onclick = () => { snd.init(); snd.toggle(); hud(); };
 $('btnHap').onclick = () => { hapOn = !hapOn; try { localStorage.setItem('getfish_haptic', hapOn ? 'on' : 'off'); } catch (e) { } hud(); if (hapOn) haptic('perfect'); say(hapOn ? '📳 진동 켬' : '진동 끔', 'good', 900); };
-function start() { snd.init(); snd.stage(save.stage); $('intro').hidden = true; snd.click(); }
+function start() { if (!save.gender) { say('먼저 낚시꾼을 골라 주세요', 'warn', 1200); return; } snd.init(); snd.stage(save.stage); $('intro').hidden = true; snd.click(); }
 $('startBtn').onclick = start;
+// 처음 화면: 남자·여자 낚시꾼 고르기
+function introChars() {
+  const box = $('pickChar'); if (!box) return;
+  box.innerHTML = CHARACTERS.map(c => `<button class="pick ${save.gender === c.id ? 'on' : ''}" data-g="${c.id}"><canvas width="220" height="260"></canvas><b>${c.name}</b></button>`).join('');
+  box.querySelectorAll('[data-g]').forEach(b => { portraitInto(b.querySelector('canvas'), { g: b.dataset.g, hat: save.eq.hat, outfit: save.eq.outfit, acc: save.eq.acc }, { turn: b.dataset.g === 'm' ? 0.35 : -0.35 });
+    b.onclick = () => { save.gender = b.dataset.g; persist(); snd.init(); snd.click(); haptic('nice'); introChars(); }; });
+  $('startBtn').disabled = !save.gender; $('pickHint').textContent = save.gender ? '' : '함께 낚시할 캐릭터를 골라 주세요';
+}
+introChars();
 // 버튼을 누른 뒤 Space가 그 버튼을 다시 누르지 않게
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('button'); if (b) { setTimeout(() => b.blur(), 0); if (b.id !== 'btnAct') haptic('ui'); } }, true);
 

@@ -31,7 +31,20 @@ assert.ok(pBossStart < 0.6, '처음 장비로 첫 보스는 어려워요 ' + pBo
 const s2 = G.newSave(); Object.assign(s2.items, { rod3: 1, line3: 1, float3: 1 }); Object.assign(s2.eq, { rod: 'rod3', line: 'line3', float: 'float3' });
 assert.ok(play(s2, 'p13') > 0.6, '카본 낚싯대·합사·형광찌면 첫 보스를 잡을 수 있어요');
 const s4 = G.newSave(); Object.assign(s4.items, { rod8: 1, line5: 1, float5: 1 }); Object.assign(s4.eq, { rod: 'rod8', line: 'line5', float: 'float5' });
-assert.ok(play(s4, 'd13') > 0.4, '최고 장비면 마지막 보스도 잡을 수 있어요');
+assert.ok(play(s4, 'd13') > 0.4, '심연 장비면 심해 보스를 잡을 수 있어요');
+// 새 바다(5~8): 앞 바다 보스 장비로 그 바다 흔한 물고기는 잡히고, 그 바다 장비로 보스를 잡을 수 있어요
+const gearSave = (eq, lv = 1) => { const sv = G.newSave(); for (const v of Object.values(eq)) sv.items[v] = 1; Object.assign(sv.eq, eq); sv.lv = lv; return sv; };
+const STEP = [
+  ['v', { rod: 'rod8', line: 'line5', float: 'float5' }, { rod: 'rod11', line: 'line6', float: 'float6' }, 25],
+  ['s', { rod: 'rod11', line: 'line6', float: 'float6' }, { rod: 'rod13', line: 'line7', float: 'float7' }, 32],
+  ['a', { rod: 'rod13', line: 'line7', float: 'float7' }, { rod: 'rod14', line: 'line7', float: 'float7' }, 38],
+  ['k', { rod: 'rod14', line: 'line7', float: 'float7' }, { rod: 'rod17', line: 'line8', float: 'float8' }, 45],
+];
+for (const [p, before, after, lv] of STEP) {
+  const c = play(gearSave(before, lv), p + '01'), bossB = play(gearSave(before, lv), p + '13'), bossA = play(gearSave(after, lv), p + '13');
+  console.log(`  ${p}: 흔한 ${c.toFixed(2)} · 보스(앞 장비) ${bossB.toFixed(2)} · 보스(이 바다 장비) ${bossA.toFixed(2)}`);
+  assert.ok(c > 0.85, p + ' 흔한 물고기'); assert.ok(bossA > 0.45, p + ' 보스는 그 바다 장비로'); assert.ok(bossB < bossA, p + ' 장비가 좋을수록');
+}
 
 // 놓치기: 빈 곳 누르면 하트가 줄고, 다 줄면 놓침
 { const st = G.stats(s), b = G.newBattle(FISH_BY_ID.p01, { grade: G.GRADE_BY.C, size: 10 }, st, rnd); b.targets.forEach(t => t.x = 5); for (let i = 0; i < st.heart; i++) G.hit(b, rnd); assert.equal(b.done, 'escape'); }
@@ -46,26 +59,47 @@ assert.ok(play(s4, 'd13') > 0.4, '최고 장비면 마지막 보스도 잡을 �
   assert.ok(sv.sets.set_p1, '선착장 단골 세트'); assert.ok(sv.items.bait4 >= 1, '세트 보상 받음');
   const before = sv.coins; const got = G.sellBag(sv, 'all', st); assert.ok(got > 0 && sv.coins === before + got && sv.bag.length === 0, '가방 팔기'); }
 // 상점
-{ const sv = G.newSave(); sv.coins = 1000; assert.ok(G.buy(sv, 'rod2').ok); assert.ok(!G.buy(sv, 'rod2').ok, '같은 장비 두 번'); assert.ok(!G.buy(sv, 'rod4').ok, '드랍 전용'); assert.ok(G.equip(sv, 'rod2') && G.stats(sv).pow === 16); assert.ok(!G.equip(sv, 'bait4')); }
+{ const sv = G.newSave(); sv.coins = 1000; assert.ok(G.buy(sv, 'rod2').ok); assert.ok(!G.buy(sv, 'rod2').ok, '같은 장비 두 번'); assert.ok(!G.buy(sv, 'rod4').ok, '드랍 전용'); assert.ok(G.equip(sv, 'rod2') && G.stats(sv).pow === 16); assert.ok(!G.equip(sv, 'bait4'), '없는 미끼');
+  sv.coins = 99999; assert.ok(!G.buy(sv, 'bait9').ok, '용궁 구슬은 드랍으로만'); assert.ok(G.buy(sv, 'bait4').ok && G.equip(sv, 'bait4'), '황금 미끼도 그냥 끼워요'); }
 // 미끼 뽑기: 루어가 지렁이보다 드문 물고기를 더 잘 불러요
-{ const cnt = b => { let n = 0; for (let i = 0; i < 5000; i++) if (['r', 'e'].includes(G.rollFish(2, b, 0, rnd).tier)) n++; return n; }; assert.ok(cnt('bait3') > cnt('bait1') * 1.5); assert.equal(G.rollFish(3, 'bait4', 0, rnd).id, STAGES[2].boss); }
+{ const cnt = b => { let n = 0; for (let i = 0; i < 5000; i++) if (['r', 'e'].includes(G.rollFish(2, b, 0, rnd).tier)) n++; return n; }; assert.ok(cnt('bait3') > cnt('bait1') * 1.5);
+  // 보스는 미끼마다 다른 확률로 우연히 나타나요
+  const st0 = G.stats(G.newSave()), bc = b => { let n = 0; for (let i = 0; i < 20000; i++) if (G.rollFish(3, b, 0, rnd, 0, G.bossChance(b, st0)).tier === 'boss') n++; return n / 20000; };
+  const b1 = bc('bait1'), b3 = bc('bait3'), b4 = bc('bait4'); console.log(`  보스 확률: 지렁이 ${b1.toFixed(3)} · 반짝 루어 ${b3.toFixed(3)} · 황금 미끼 ${b4.toFixed(3)}`);
+  assert.ok(b1 > 0.005 && b1 < 0.03 && b3 > b1 * 2 && b4 > 0.15, '미끼마다 보스 확률');
+  assert.ok(G.bossChance('bait1', st0, G.castResult(0.5, st0)) > G.bossChance('bait1', st0, G.castResult(0.02, st0)), '잘 던지면 보스가 더 와요');
+  assert.ok(G.bossChance('bait1', st0, null, 50) > G.bossChance('bait1', st0, null, 0), '오래 못 만나면 조금씩 올라요');
+  // 정해진 미끼로만 낚이는 물고기
+  const got = b => { const seen = new Set(); for (let i = 0; i < 20000; i++) seen.add(G.rollFish(1, b, 0, rnd).id); return seen; };
+  assert.ok(!got('bait1').has('p14') && got('bait5').has('p14'), '떡붕어는 떡밥으로만');
+  for (const f of G.FISH.filter(f => f.bait)) assert.ok(f.bait.every(b => G.BAIT_BY_ID[b]), f.name); }
+// 던졌다 거두기: 미끼를 돌려받아요
+{ const sv = G.newSave(); const n0 = sv.items.bait1, id = G.useBait(sv); assert.equal(sv.items.bait1, n0 - 1); G.refundBait(sv, id); assert.equal(sv.items.bait1, n0); assert.equal(sv.eq.bait, 'bait1');
+  const sv2 = G.newSave(); sv2.items.bait1 = 1; const id2 = G.useBait(sv2); assert.equal(sv2.eq.bait, 'bait0'); G.refundBait(sv2, id2); assert.equal(sv2.eq.bait, 'bait1', '마지막 하나도 돌려받으면 다시 끼워요'); }
+// 보스는 체력이 줄면 포효하며 빨라져요
+{ const st = G.stats(s4), b = G.newBattle(FISH_BY_ID.d13, { grade: G.GRADE_BY.C, size: 300 }, st, rnd); b.hp = b.maxHp * 0.5; G.stepBattle(b, 0.01, rnd); assert.ok(b.events && b.events.includes('roar') && b.phase === 1); }
 // 예전 저장 고치기
-{ const f = G.fixSave({ coins: 5, eq: { rod: 'nope' }, bag: [{ id: 'zzz' }] }); assert.equal(f.eq.rod, 'rod1'); assert.equal(f.bag.length, 0); }
+{ const f = G.fixSave({ coins: 5, eq: { rod: 'nope' }, bag: [{ id: 'zzz' }], animal: 'cat' }); assert.equal(f.eq.rod, 'rod1'); assert.equal(f.bag.length, 0); assert.equal(f.gender, null, '예전 동물 저장은 다시 고르기'); assert.equal(f.animal, undefined);
+  assert.equal(G.fixSave({ gender: 'f' }).gender, 'f'); }
 console.log('logic ok · 첫 보스(처음 장비) 승률', pBossStart.toFixed(2));
 // 참고용 표: 장비별 승률
 if (process.env.TABLE) {
-  const gear = { 처음: {}, 유리섬유: { rod: 'rod2', line: 'line2', float: 'float2' }, 카본: { rod: 'rod3', line: 'line3', float: 'float3' }, 티타늄: { rod: 'rod5', line: 'line4', float: 'float4' }, 서리: { rod: 'rod7', line: 'line5', float: 'float4' }, 심연: { rod: 'rod8', line: 'line5', float: 'float5' } };
+  const gear = { 처음: {}, 유리섬유: { rod: 'rod2', line: 'line2', float: 'float2' }, 카본: { rod: 'rod3', line: 'line3', float: 'float3' }, 티타늄: { rod: 'rod5', line: 'line4', float: 'float4' }, 서리: { rod: 'rod7', line: 'line5', float: 'float4' }, 심연: { rod: 'rod8', line: 'line5', float: 'float5' }, 용암: { rod: 'rod11', line: 'line6', float: 'float6' }, 번개: { rod: 'rod13', line: 'line7', float: 'float7' }, 산호: { rod: 'rod14', line: 'line7', float: 'float7' }, 용왕: { rod: 'rod17', line: 'line8', float: 'float8' } };
   for (const [n, eq] of Object.entries(gear)) { const sv = G.newSave(); for (const v of Object.values(eq)) sv.items[v] = 1; Object.assign(sv.eq, eq);
-    console.log(n.padEnd(5), ['p01', 'p11', 'p13', 'r01', 'r12', 'r13', 'f01', 'f12', 'f13', 'd01', 'd11', 'd13'].map(id => id + ':' + play(sv, id, 0.8, 60).toFixed(2)).join(' ')); }
+    console.log(n.padEnd(5), ['p13', 'r13', 'f13', 'd01', 'd11', 'd13', 'v01', 'v12', 'v13', 's01', 's12', 's13', 'a01', 'a12', 'a13', 'k01', 'k12', 'k13'].map(id => id + ':' + play(sv, id, 0.8, 60).toFixed(2)).join(' ')); }
 }
-// 던지기: 멀리·나이스 캐스팅일수록 드문 물고기가 더 오고, '멀리 던지기' 장비가 좋은 구간을 넓혀요
-{ const st0 = G.stats(G.newSave()), near = G.castResult(0.2, st0), far = G.castResult(0.97, st0);
-  assert.ok(far.nice && !near.nice && far.bonus > near.bonus && far.dist > near.dist && far.timeBonus > 0);
+// 던지기: 가운데에서 멈출수록 좋은 결과. '멀리 던지기' 장비가 가운데 구간을 넓혀요
+{ const st0 = G.stats(G.newSave()), mid = G.castResult(0.5, st0), edge = G.castResult(0.02, st0);
+  assert.ok(mid.perfect && mid.nice && edge.grade === 'bad' && mid.bonus > edge.bonus && mid.dist > edge.dist && mid.timeBonus > 0);
+  assert.equal(G.castResult(0.5 + 0.15 / 2, st0).grade, 'great'); assert.equal(G.castResult(0.5 + 0.4 / 2, st0).grade, 'good');
   const cnt = c => { let n = 0; for (let i = 0; i < 6000; i++) if (['r', 'e'].includes(G.rollFish(1, 'bait1', 0, rnd, c).tier)) n++; return n; };
-  assert.ok(cnt(far.bonus) > cnt(near.bonus) * 1.3, '멀리 던지면 드문 물고기가 더 와요');
+  assert.ok(cnt(mid.bonus) > cnt(edge.bonus) * 1.3, '가운데로 던지면 드문 물고기가 더 와요');
   const sv = G.newSave(); Object.assign(sv.items, { rod8: 1, float5: 1 }); Object.assign(sv.eq, { rod: 'rod8', float: 'float5' });
-  const stF = G.stats(sv); assert.ok(G.castResult(0.83, stF).nice && !G.castResult(0.83, st0).nice, '좋은 장비는 좋은 구간이 넓어요');
-  assert.ok(G.castGauge(0) === 0 && Math.abs(G.castGauge(1 / G.CAST.speed) - 1) < 1e-9); }
+  const stF = G.stats(sv), at = 0.5 + 0.09 / 2; assert.ok(G.castResult(at, stF).perfect && !G.castResult(at, st0).perfect, '좋은 장비는 가운데 구간이 넓어요');
+  assert.ok(G.castGauge(0) === 0 && Math.abs(G.castGauge(1 / G.castSpeed(1)) - 1) < 1e-9 && G.castSpeed(8) > G.castSpeed(1), '깊은 바다일수록 빨라요');
+  // 사람처럼 누르기(반응 오차 ±0.12)면 PERFECT는 가끔, GREAT 이상은 꽤 자주
+  let per = 0, gr = 0; for (let i = 0; i < 4000; i++) { const r = G.castResult(0.5 + (rnd() - 0.5) * 0.24, st0); if (r.perfect) per++; if (r.nice) gr++; }
+  console.log(`  던지기(보통 솜씨): PERFECT ${(per / 40).toFixed(0)}% · GREAT 이상 ${(gr / 40).toFixed(0)}%`); assert.ok(per / 4000 > 0.1 && per / 4000 < 0.5 && gr / 4000 > 0.5); }
 console.log('cast ok');
 // 레벨 · 칭호
 { const sv = G.newSave(); const st = G.stats(sv); assert.equal(sv.lv, 1);
@@ -73,6 +107,7 @@ console.log('cast ok');
   assert.ok(r.exp > 400 && r.levelUps.length >= 2, '보스 S 등급이면 레벨이 여러 번 올라요 ' + r.exp);
   assert.ok(sv.titles.t_boss1 && r.titles.some(t => t.id === 't_boss1'), '보스 칭호');
   const powBefore = G.stats(sv).pow; sv.title = 't_boss1'; assert.equal(G.stats(sv).pow, powBefore + 1, '단 칭호 효과');
+  assert.ok(G.TITLES.some(t => t.cond.dex === G.FISH.length), '도감 전부 칭호는 물고기 수와 같아요');
   let total = 0; for (let l = 1; l < G.LEVEL.max; l++) total += G.LEVEL.need(l); assert.ok(total > 100000, '만렙까지 충분히 길어요 ' + total);
   for (const t of G.TITLES) assert.ok(Object.keys(t.cond).length === 1, t.name);
   assert.equal(G.fixSave({ title: 'nope' }).title, 't_new'); }

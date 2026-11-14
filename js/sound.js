@@ -1,6 +1,6 @@
 // 소리: 녹음 파일 없이 브라우저에서 바로 합성 (효과음 + 바다마다 다른 잔잔한 배경음)
 export function createSound() {
-  let ctx = null, master = null, music = null, sfx = null, on = true, timer = null, stage = 1, step = 0, nextT = 0;
+  let ctx = null, master = null, music = null, sfx = null, on = true, timer = null, stage = 1, step = 0, nextT = 0, bossOn = false, bossStep = 0;
   try { on = localStorage.getItem('getfish_sound') !== 'off'; } catch (e) { }
   function init() {
     if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
@@ -49,7 +49,7 @@ export function createSound() {
       [[0, 74, 16]], [[0, 74, 8]]] },
   ];
   const BARS = []; for (const s of SEC) s.ch.forEach((c, i) => BARS.push({ s, c, i, lead: s.lead[i] || [], first: i === 0 }));
-  const KEY = { 1: 0, 2: 2, 3: -2, 4: -3 };
+  const KEY = { 1: 0, 2: 2, 3: -2, 4: -3, 5: 1, 6: -4, 7: 3, 8: 5 };
   const mf = m => 440 * Math.pow(2, (m - 69) / 12);
   let delay = null;
   function bus() {   // 리드용 메아리 (가벼운 딜레이)
@@ -71,9 +71,25 @@ export function createSound() {
     g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(v, t + 0.03); g.gain.setValueAtTime(v * 0.85, t + Math.max(0.05, d - 0.06)); g.gain.linearRampToValueAtTime(0.0001, t + d + 0.08);
     g.connect(bus()); [o, o2, lfo].forEach(x => { x.start(t); x.stop(t + d + 0.1); }); };
   let bar = 0;
+  // 보스 음악: 단조로 몰아치는 북과 베이스, 금관 같은 화음 (메인 곡 대신)
+  const BOSS = { ch: [[0, [0, 3, 7]], [0, [0, 3, 7]], [-4, [8, 12, 15]], [-2, [10, 14, 17]], [0, [0, 3, 7]], [-5, [7, 10, 14]], [-4, [8, 12, 15]], [-5, [7, 11, 14]]],
+    lead: [[[0, 74, 3], [3, 72, 3], [6, 70, 2], [8, 69, 8]], [[0, 70, 2], [2, 72, 2], [4, 74, 4], [8, 77, 4], [12, 74, 4]], [[0, 75, 6], [6, 74, 2], [8, 72, 8]], [[0, 74, 4], [4, 72, 4], [8, 70, 8]],
+      [[0, 74, 3], [3, 77, 3], [6, 81, 2], [8, 79, 8]], [[0, 77, 4], [4, 74, 4], [8, 74, 4], [12, 72, 4]], [[0, 72, 6], [6, 74, 2], [8, 75, 8]], [[0, 74, 12], [12, 73, 4]]] };
+  const tom = (t, f, v = 0.4) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.5, t + 0.25); g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.4); o.connect(g).connect(music); o.start(t); o.stop(t + 0.45); };
+  function bossSchedule(t) {
+    const B = BOSS, i16 = bossStep % 16, bar = (bossStep >> 4) % 8, [root, notes] = B.ch[bar], k = KEY[stage] || 0, R0 = 50 + k - 2;
+    if (i16 % 4 === 0 || i16 === 14) kick(t); if (i16 === 4 || i16 === 12) snare(t, 0.26); if (i16 % 2 === 1) hat(t, 0.04);
+    if ([0, 3, 6, 10].includes(i16)) tom(t, i16 === 0 ? 110 : 150, 0.25);
+    bassN(t, mf(R0 - 12 + root + (i16 % 4 === 2 ? 12 : 0)), SIX * 0.9);
+    if (i16 === 0 || i16 === 6 || i16 === 10) for (const n of notes) pad(t, mf(R0 + n), SIX * 3, 0.03);
+    if (i16 === 0 && bar % 4 === 0) crash(t);
+    for (const [at, m, len] of B.lead[bar]) if (at === i16) lead(t, mf(m + k - 2), SIX * len * 0.9, 0.08);
+    bossStep++;
+  }
   function schedule(until) {
     if (!ctx || !on) return;
     while (nextT < (until ?? ctx.currentTime + 0.5)) {
+      if (bossOn) { bossSchedule(nextT); nextT += SIX * 0.82; continue; }
       const B = BARS[bar % BARS.length], k = KEY[stage] || 0, soft = stage === 4 ? 0.7 : 1, i16 = step % 16, t = nextT;
       const [root, notes] = CH[B.c], R0 = 50 + k;   // D3 = 50
       // 드럼 (인트로 첫 마디·심해는 가볍게)
@@ -101,6 +117,11 @@ export function createSound() {
     init, get on() { return on; },
     toggle() { on = !on; try { localStorage.setItem('getfish_sound', on ? 'on' : 'off'); } catch (e) { } if (master) master.gain.value = on ? 0.8 : 0; return on; },
     stage(n) { if (n !== stage) { stage = n; } },
+    boss(v) { bossOn = !!v; bossStep = 0; },
+    bossIntro() { if (!ctx) return; const t = ctx.currentTime; tone(sfx, 55, t, 2.4, 0.5, 'sawtooth', 0.6); tone(sfx, 82, t + 0.1, 2.2, 0.3, 'square', 0.7); splashN(t, 0.5, 400, 2.0); splashN(t + 0.8, 0.4, 900, 1.2);
+      [0, 0.45, 0.9].forEach((d, i) => { tone(sfx, 110 * (i + 1) * 0.75, t + 1.0 + d, 0.9, 0.12, 'sawtooth'); tone(sfx, 165 * (i + 1) * 0.75, t + 1.0 + d, 0.9, 0.08, 'sawtooth'); }); },
+    roar() { if (!ctx) return; const t = ctx.currentTime; splashN(t, 0.5, 300, 0.9); tone(sfx, 90, t, 0.9, 0.35, 'sawtooth', 0.45); tone(sfx, 140, t + 0.05, 0.7, 0.2, 'square', 0.5); },
+    reel() { if (!ctx) return; const t = ctx.currentTime; for (let i = 0; i < 8; i++) tone(sfx, 1200 + i * 60, t + i * 0.035, 0.03, 0.05, 'square'); splashN(t, 0.12, 1800, 0.25); },
     cast() { if (!ctx) return; const t = ctx.currentTime; tone(sfx, 900, t, 0.25, 0.05, 'sine', 0.4); splashN(t + 0.45, 0.25, 1400, 0.4); },
     bite() { if (!ctx) return; const t = ctx.currentTime; tone(sfx, 880, t, 0.12, 0.15, 'square'); tone(sfx, 1320, t + 0.1, 0.15, 0.12, 'square'); splashN(t, 0.15, 2000, 0.2); },
     hook() { if (!ctx) return; const t = ctx.currentTime; splashN(t, 0.35, 1800, 0.5); tone(sfx, 300, t, 0.3, 0.1, 'sawtooth', 1.6); },
