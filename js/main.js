@@ -1,7 +1,7 @@
 // 토이피쉬 화면: 낚시(던지기 → 입질 → 타이밍 싸움 → 결과) + 가방·상점·도감·꾸미기
 import * as G from './game.js';
-import { STAGES, STAGE_ICON, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS, ANIMALS, CHARACTERS, SLOTS, BAG_MAX, LEVEL, TITLES } from './data.js';
-import { drawFish, drawScene, drawAngler, drawAvatarFront, fishSprite, setToy } from './draw.js';
+import { MAP_STAGES, LETTERS, LETTER_BY_ID, STAGES, STAGE_ICON, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS, ANIMALS, CHARACTERS, SLOTS, BAG_MAX, LEVEL, TITLES } from './data.js';
+import { drawFish, drawScene, drawAngler, drawAvatarFront, fishSprite, setToy, lightningNear } from './draw.js';
 import { createSound } from './sound.js';
 
 const $ = id => document.getElementById(id);
@@ -51,7 +51,7 @@ function act() {
   if (!$('result').hidden) { closeResult(); return; }
   if (!$('sheet').hidden || !$('intro').hidden) return;
   pressAnim();
-  if (S.mode === 'landed') { if (S.land && !S.land.shown) { S.land.shown = true; showResult(S.land.res); } return; }
+  if (S.mode === 'landed') { if (S.land && !S.land.shown) { S.land.shown = true; S.land.bottle ? showBottle(S.land.res) : showResult(S.land.res); } return; }
   if (S.mode === 'bossIntro') { if (S.modeT > 1.4) startFight(); return; }
   if (S.mode === 'idle') aim();
   else if (S.mode === 'aim') cast(G.castGauge(S.modeT, save.stage));
@@ -65,6 +65,7 @@ function aim() {   // 던지기 막대 시작 (별이 왔다 갔다)
 function cast(pos = 0.5) {
   S.bait = G.useBait(save); save.stats.casts++;
   const c = S.castRes = G.castResult(pos, ST);
+  save.run.perfect = c.perfect ? (save.run.perfect || 0) + 1 : 0; S.castBolt = save.stage === 6 && lightningNear(S.t);   // 숨은 물고기 조건용
   if (c.nice) save.stats.nice = (save.stats.nice || 0) + 1; if (c.perfect) save.stats.perfect = (save.stats.perfect || 0) + 1;
   const nt = c.nice ? G.checkTitles(save) : []; persist(); nt.forEach(t => setTimeout(() => say(`🏅 칭호 「${t.name}」`, 'good', 2200), 1200));
   S.bobX = 0.56 + c.power * 0.13 + (Math.random() - 0.5) * 0.05; S.bobY = 0.6 - c.power * 0.14 + Math.random() * 0.02;   // 잘 던질수록 수평선 쪽
@@ -80,13 +81,20 @@ function cast(pos = 0.5) {
 function cancelCast() {
   if (S.mode === 'aim') { setMode('idle'); haptic('cancel'); say('던지기를 그만뒀어요', '', 900); return; }
   if (!['cast', 'wait', 'bite'].includes(S.mode)) return;
-  G.refundBait(save, S.bait); save.stats.casts = Math.max(0, save.stats.casts - 1); persist();
+  G.refundBait(save, S.bait); save.stats.casts = Math.max(0, save.stats.casts - 1); save.run.cancel = (save.run.cancel || 0) + 1; persist();
   snd.reel(); haptic('cancel'); say('↩ 낚싯대를 거뒀어요 (미끼는 그대로)', '', 1100);
   S.reel = { t: 0, from: [W * S.bobX, H * S.bobY] }; setMode('idle');
 }
 function hookFish() {
   const c = S.castRes || G.castResult(0.5, ST);
-  S.fish = G.rollFish(save.stage, S.bait, ST.luck, Math.random, c.bonus, G.bossChance(S.bait, ST, c, save.calm)); S.roll = G.rollSize(S.fish, ST.luck + c.luck);
+  // 가끔 물고기 대신 유리병 (편지 · 지도 조각)
+  const bottle = G.rollBottle(save, save.stage);
+  if (bottle) { save.run.cancel = 0; G.refundBait(save, S.bait); const res = G.openBottle(save, bottle); persist(); snd.hook(); haptic('hook');
+    S.land = { bottle: true, res, t: 0, shown: false, from: [W * S.bobX, H * S.bobY] }; setMode('landed'); burst(W * S.bobX, H * S.bobY, 18, '#FFFFFF', 380, 'drop'); return; }
+  const ctxS = { eq: save.eq, cast: c, perfectRun: save.run.perfect, cancels: save.run.cancel, hour: new Date().getHours(), lightning: !!S.castBolt };
+  save.run.cancel = 0;
+  S.fish = G.rollFish(save.stage, S.bait, ST.luck, Math.random, c.bonus, G.bossChance(S.bait, ST, c, save.calm), ctxS); S.roll = G.rollSize(S.fish, ST.luck + c.luck);
+  if (S.fish.hidden) { say('🔍 …처음 느껴 보는 손맛이에요!', 'boss', 1600); haptic('gold'); }
   S.battle = G.newBattle(S.fish, S.roll, ST, Math.random, c.timeBonus); snd.hook(); haptic('hook'); S.shake = 0.4;
   if (S.fish.tier === 'boss') { S.boss = true; setMode('bossIntro'); snd.bossIntro(); snd.boss(true); haptic('boss'); S.shake = 1.2; return; }
   S.boss = false; save.calm = (save.calm || 0) + 1; persist();
@@ -128,7 +136,7 @@ function hud() {
   const need = LEVEL.need(save.lv), tt = G.TITLE_BY_ID[save.title];
   $('lvPill').innerHTML = `<b>Lv.${save.lv}</b> <span>${tt ? tt.name : ''}</span><i style="width:${save.lv >= LEVEL.max ? 100 : Math.min(100, save.exp / need * 100)}%"></i>`;
   $('btnStage').textContent = `🌊 ${stage().name} ▾`;
-  const [a, n] = G.dexCount(save); $('dexCount').textContent = `📖 ${a}/${n}`;
+  const [a, n] = G.dexCount(save), [h] = G.secretCount(save); $('dexCount').textContent = `📖 ${a}/${n}` + (h ? ` · 🔍${h}` : '');
   const b = BAIT_BY_ID[save.eq.bait]; $('btnBait').innerHTML = `${baitIcon(b.id)} ${b.name}${b.id !== 'bait0' ? ' ×' + (save.items[b.id] || 0) : ''} <small class="bossP">👑 ${pct(G.bossChance(b.id, ST, null, save.calm))}</small>`;
   $('btnSound').textContent = snd.on ? '🔊' : '🔇'; $('btnHap').textContent = hapOn ? '📳' : '📴';
 }
@@ -156,8 +164,8 @@ function update(dt) {
   if (S.reel) { S.reel.t += dt; if (S.reel.t > 0.5) S.reel = null; }
   S.roarT += dt; S.flash = Math.max(0, S.flash - dt * 2.5);
   if (S.mode === 'landed' && S.land) { S.land.t += dt; const L = S.land;
-    if (L.t > 0.95 && !L.pop) { L.pop = true; snd.coin(); burst(W / 2, H * 0.42, 40, '#FFE680', 520, 'star'); if (L.res.newDex || ['r', 'e', 'boss'].includes(L.res.fish.tier) || ['S', 'SS'].includes(L.res.roll.grade.g)) confetti(); }
-    if (L.t > 2.3 && !L.shown) { L.shown = true; showResult(L.res); } }
+    if (L.t > 0.95 && !L.pop) { if (!L.bottle && L.res.fish.hidden) confetti(); L.pop = true; snd.coin(); burst(W / 2, H * 0.42, 40, '#FFE680', 520, 'star'); if (L.bottle ? L.res.kind === 'map' : L.res.newDex || ['r', 'e', 'boss'].includes(L.res.fish.tier) || ['S', 'SS'].includes(L.res.roll.grade.g)) confetti(); }
+    if (L.t > 2.3 && !L.shown) { L.shown = true; L.bottle ? showBottle(L.res) : showResult(L.res); } }
   if (S.laneFlash) { S.laneFlash.t += dt; if (S.laneFlash.t > 0.25) S.laneFlash = null; }
   for (const p of S.parts) { p.t += dt; p.vy += (p.g ?? 600) * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot = (p.rot || 0) + (p.vr || 0) * dt; }
   S.parts = S.parts.filter(p => p.t < p.life);
@@ -286,8 +294,26 @@ function drawParts() {
   ctx.globalAlpha = 1;
 }
 const ease = u => 1 - Math.pow(1 - Math.min(1, Math.max(0, u)), 3);
+function bottleArt(c, x, y, s, rot = 0, kind = 'letter') {   // 유리병 (2D)
+  c.save(); c.translate(x, y); c.rotate(rot); c.scale(s / 100, s / 100);
+  c.fillStyle = 'rgba(170,230,220,.55)'; c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 3;
+  c.beginPath(); c.roundRect ? c.roundRect(-46, -26, 76, 52, 18) : c.rect(-46, -26, 76, 52); c.fill(); c.stroke();
+  c.fillRect(28, -12, 18, 24); c.strokeRect(28, -12, 18, 24); c.fillStyle = '#A8764A'; c.fillRect(44, -10, 12, 20);
+  c.fillStyle = kind === 'map' ? '#E8D2A0' : '#FFF6E0'; c.save(); c.rotate(-0.15); c.fillRect(-32, -12, 50, 22); c.strokeStyle = kind === 'map' ? '#A8502A' : '#C8B89A'; c.lineWidth = 2; c.beginPath();
+  if (kind === 'map') { c.moveTo(-26, 4); c.lineTo(-12, -4); c.lineTo(0, 2); c.lineTo(12, -6); } else { c.moveTo(-26, -4); c.lineTo(10, -4); c.moveTo(-26, 3); c.lineTo(6, 3); } c.stroke(); c.restore();
+  c.fillStyle = 'rgba(255,255,255,.7)'; c.fillRect(-38, -20, 30, 6); c.restore();
+}
 function landedView(tip) {
-  const L = S.land, f = L.res.fish, g = L.res.roll.grade, t = L.t, u = ease(t / 0.9);
+  const L = S.land, t = L.t, u = ease(t / 0.9);
+  if (L.bottle) {
+    const x = L.from[0] + (W / 2 - L.from[0]) * u, y = L.from[1] + (H * 0.42 - L.from[1]) * u - Math.sin(Math.min(1, t / 0.9) * Math.PI) * H * 0.16, big = Math.min(W * 0.35, H * 0.4);
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(tip.x, tip.y); ctx.lineTo(x, y); ctx.stroke();
+    bottleArt(ctx, x, y, big * (0.4 + 0.6 * u), (1 - u) * -1.5 + Math.sin(t * 3) * 0.08, L.res.kind);
+    if (t > 0.95) { const k = ease((t - 0.95) / 0.35); ctx.save(); ctx.translate(W / 2, H * 0.42 - big * 0.55); ctx.scale(0.6 + 0.4 * k, 0.6 + 0.4 * k); ctx.textAlign = 'center'; ctx.font = `bold ${Math.round(Math.min(56, W * 0.07))}px Galmuri11, sans-serif`;
+      const txt = L.res.kind === 'map' ? '지도 조각을 건졌다!' : '유리병을 건졌다!'; ctx.lineWidth = 8; ctx.strokeStyle = '#2A4A5A'; ctx.strokeText(txt, 0, 0); ctx.fillStyle = '#E8FAFF'; ctx.fillText(txt, 0, 0); ctx.restore(); }
+    return;
+  }
+  const f = L.res.fish, g = L.res.roll.grade;
   // 줄이 물고기를 끌어 올림
   const big = Math.min(W * 0.5, H * 0.55) * (['flat', 'round', 'horse', 'jelly', 'crab'].includes(f.look.shape) ? 0.7 : 1) * (f.tier === 'boss' ? 1.2 : 1);
   const x = L.from[0] + (W / 2 - L.from[0]) * u, y = L.from[1] + (H * 0.42 - L.from[1]) * u - Math.sin(Math.min(1, t / 0.9) * Math.PI) * H * 0.18;
@@ -303,7 +329,7 @@ function landedView(tip) {
   if (t > 0.95) {   // "낚았다!" + 등급 도장
     const k = ease((t - 0.95) / 0.35), sc = 0.6 + 0.4 * k + Math.sin(Math.min(1, (t - 0.95) / 0.35) * Math.PI) * 0.15;
     ctx.save(); ctx.translate(W / 2, H * 0.42 - big * 0.5); ctx.scale(sc, sc); ctx.textAlign = 'center'; ctx.font = `bold ${Math.round(Math.min(64, W * 0.08))}px Galmuri11, sans-serif`;
-    ctx.lineWidth = 8; ctx.strokeStyle = '#5A3420'; ctx.strokeText(f.tier === 'boss' ? '보스를 낚았다!' : '낚았다!', 0, 0); ctx.fillStyle = '#FFF4D6'; ctx.fillText(f.tier === 'boss' ? '보스를 낚았다!' : '낚았다!', 0, 0); ctx.restore();
+    ctx.lineWidth = 8; ctx.strokeStyle = '#5A3420'; const tt = f.hidden ? '숨은 물고기 발견!' : f.tier === 'boss' ? '보스를 낚았다!' : '낚았다!'; ctx.strokeText(tt, 0, 0); ctx.fillStyle = f.hidden ? '#E8D2FF' : '#FFF4D6'; ctx.fillText(tt, 0, 0); ctx.restore();
   }
   if (t > 1.25) {
     const k = ease((t - 1.25) / 0.3), r = Math.min(52, W * 0.06); ctx.save(); ctx.translate(W / 2 + big * 0.45, H * 0.42 + big * 0.18); ctx.rotate(-0.25 + (1 - k) * 1.5); ctx.scale(2 - k, 2 - k); ctx.globalAlpha = k;
@@ -372,7 +398,7 @@ function heart(x, y, r, full) { ctx.fillStyle = full ? '#F2545A' : 'rgba(255,255
 // ---------------------------------------------------------------- 결과 창
 function showResult(res) {
   const f = res.fish, g = res.roll.grade;
-  $('resTop').innerHTML = `${res.newDex ? '<span class="new">NEW 도감!</span>' : ''}${res.newBest ? '<span class="new best">최고 기록!</span>' : ''}${f.tier === 'boss' ? '<span class="new boss">👑 보스</span>' : ''}`;
+  $('resTop').innerHTML = `${res.newDex ? '<span class="new">NEW 도감!</span>' : ''}${res.newBest ? '<span class="new best">최고 기록!</span>' : ''}${f.tier === 'boss' ? '<span class="new boss">👑 보스</span>' : ''}${f.hidden ? '<span class="new secret">🔍 숨은 물고기</span>' : ''}`;
   const c = $('resFish'), x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height);
   drawFish(x, f, c.width / 2, c.height / 2, ['flat', 'round', 'horse', 'jelly', 'crab'].includes(f.look.shape) ? 210 : 380, { t: 0.2, shadow: true });
   $('resInfo').innerHTML = `<h2>${f.name} <span class="grade g${g.g}">${g.g}</span></h2><p class="size">${res.roll.size}cm <small>(${f.size[0]}~${f.size[1]}cm)</small> · ${TIERS[f.tier].name}</p><p class="desc">${f.desc}</p>
@@ -383,7 +409,20 @@ function showResult(res) {
   for (const t of res.titles) ex += `<div class="setDone">🏅 새 칭호 「${t.name}」! <small>${t.desc} · ${statLine(t.stats)}</small></div>`;
   if (res.unlocked) ex += `<div class="setDone">🌊 새 바다 「${STAGES[res.unlocked - 1].name}」 가 열렸어요!</div>`;
   $('resExtra').innerHTML = ex; $('result').hidden = false;
-  if (res.sets.length || res.unlocked || f.tier === 'boss' || res.levelUps.length || res.titles.length) snd.fanfare();
+  if (res.sets.length || res.unlocked || f.tier === 'boss' || f.hidden || res.levelUps.length || res.titles.length) snd.fanfare();
+}
+/** 유리병을 열었을 때 */
+function showBottle(res) {
+  const c = $('resFish'), x = c.getContext('2d'); x.clearRect(0, 0, c.width, c.height); bottleArt(x, c.width / 2, c.height / 2, 190, -0.12, res.kind);
+  let top = '<span class="new secret">📜 유리병</span>', info = '', ex = '';
+  if (res.kind === 'letter') { const l = LETTER_BY_ID[res.id]; top += l.kind === 'hint' ? '<span class="new best">🔍 힌트</span>' : '';
+    info = `<h2>${l.title}</h2><p class="letter">${l.text}</p>`; ex = `<div class="setDone">📜 모험 수첩에 적어 뒀어요 (편지 ${Object.keys(save.letters).length}/${LETTERS.length}) · N 키</div>`; }
+  else if (res.kind === 'map') { info = `<h2>🗺️ 지도 조각 ${res.pieces}/${MAP_STAGES.length}</h2><p class="letter">${stage().name}의 주인을 이긴 낚시꾼에게 떠내려온 지도 조각이에요. ${res.pieces < MAP_STAGES.length ? `나머지 조각은 ${MAP_STAGES.filter(s => !save.map[s]).map(s => STAGES[s - 1].name).join(', ')}에 있을 것 같아요.` : '조각을 맞추자 어딘가로 가는 길이 보여요…'}</p>`;
+    if (res.opened) ex = `<div class="setDone">🧸 숨은 바다 「${STAGES[res.opened - 1].name}」가 열렸어요! 바다 고르기에서 가 보세요.</div>`; }
+  else info = `<h2>빈 유리병</h2><p class="letter">편지는 없고 반짝이는 동전이 들어 있었어요.</p>`, ex = `<div class="drops">🪙 +${res.n.toLocaleString()}</div>`;
+  for (const t of res.titles || []) ex += `<div class="setDone">🏅 새 칭호 「${t.name}」! <small>${t.desc}</small></div>`;
+  $('resTop').innerHTML = top; $('resInfo').innerHTML = info + '<p class="small">미끼는 그대로예요.</p>'; $('resExtra').innerHTML = ex; $('result').hidden = false;
+  if (res.kind === 'map') snd.fanfare(); else snd.coin();
 }
 function closeResult() { $('result').hidden = true; setMode('idle'); snd.click(); }
 $('resOk').onclick = closeResult;
@@ -392,8 +431,8 @@ const nameOf = id => (ITEM_BY_ID[id] || BAIT_BY_ID[id] || {}).name || id;
 // ---------------------------------------------------------------- 창 (가방·상점·도감·꾸미기·바다·미끼)
 let sheetKind = null, sheetTab = null;
 function openSheet(kind, tab) {
-  if (S.mode !== 'idle' && !['dex', 'title'].includes(kind)) { say('낚시가 끝난 뒤에 열 수 있어요', 'warn'); return; }
-  sheetKind = kind; sheetTab = tab || ({ shop: 'rod', dex: String(save.stage), dress: 'char' }[kind] || null); $('sheet').hidden = false; snd.click(); drawSheet();
+  if (S.mode !== 'idle' && !['dex', 'title', 'note'].includes(kind)) { say('낚시가 끝난 뒤에 열 수 있어요', 'warn'); return; }
+  sheetKind = kind; sheetTab = tab || ({ shop: 'rod', dex: String(save.stage), dress: 'char', note: 'letters' }[kind] || null); $('sheet').hidden = false; snd.click(); drawSheet();
 }
 function closeSheet() { $('sheet').hidden = true; sheetKind = null; }
 document.querySelector('#sheet .close').onclick = closeSheet;
@@ -431,15 +470,16 @@ function drawSheet() {
   }
   else if (sheetKind === 'dex') {
     const [a, n] = G.dexCount(save); $('sheetTitle').textContent = `📖 도감 ${a}/${n}`;
-    tabs([...STAGES.map(s => [String(s.id), STAGE_ICON[s.id - 1] + ' ' + s.name]), ['sets', '세트 보상']]);
+    tabs([...STAGES.filter(s => !s.hidden || save.hiddenSea).map(s => [String(s.id), STAGE_ICON[s.id - 1] + ' ' + s.name]), ['sets', '세트 보상']]);
     if (sheetTab === 'sets') {
       B.innerHTML = `<div class="list">${SETS.map(s => { const [h, t] = G.setProgress(save, s), done = save.sets[s.id];
         const rw = `🪙${(s.reward.coins || 0).toLocaleString()}${Object.entries(s.reward.items || {}).map(([k, n]) => ' · ' + nameOf(k) + (n > 1 ? ' ×' + n : '')).join('')}`;
         return `<div class="item ${done ? 'done' : ''}"><div class="ico">${done ? '✅' : '📖'}</div><div class="txt"><b>${s.name}</b><small>${s.grade ? `아무 물고기나 ${s.grade} 등급으로 ${s.count}종` : s.fish.map(id => save.dex[id] ? FISH_BY_ID[id].name : '？').join(' · ')}</small><div class="bar"><i style="width:${h / t * 100}%"></i></div></div><div class="how">${h}/${t}<small>${rw}</small></div></div>`; }).join('')}</div>`;
     } else {
-      const sid = +sheetTab, locked = sid > save.unlocked;
-      B.innerHTML = (locked ? `<p class="empty">🔒 앞 바다의 보스를 잡으면 열려요</p>` : '') + `<div class="grid dex">${FISH.filter(f => f.stage === sid).map(f => { const d = save.dex[f.id];
-        return `<div class="cell ${d ? '' : 'unk'} t-${f.tier}" data-fish="${f.id}"><img src="${thumb(f, !!d)}"><b>${d ? f.name : '？？？'}</b><span>${d ? `최대 ${d.max}cm <i class="grade g${d.best}">${d.best}</i>` : TIERS[f.tier].name}${f.bait ? ' · ' + baitIcon(f.bait[0]) + ' 전용' : ''}</span></div>`; }).join('')}</div><div id="dexInfo"></div>`;
+      const sid = +sheetTab, locked = !G.canGo(save, sid), hid = FISH.filter(f => f.stage === sid && f.hidden);
+      const hidLine = hid.length ? `<p class="small secretLine">🔍 이 바다의 숨은 물고기: ${hid.some(f => save.dex[f.id]) ? '찾았어요!' : '어딘가에 숨어 있대요… 유리병 편지를 찾아보세요'}</p>` : '';
+      B.innerHTML = (locked ? `<p class="empty">🔒 앞 바다의 보스를 잡으면 열려요</p>` : '') + hidLine + `<div class="grid dex">${FISH.filter(f => f.stage === sid && (!f.hidden || save.dex[f.id])).map(f => { const d = save.dex[f.id];
+        return `<div class="cell ${d ? '' : 'unk'} t-${f.tier} ${f.hidden ? 't-secret' : ''}" data-fish="${f.id}"><img src="${thumb(f, !!d)}"><b>${d ? f.name : '？？？'}</b><span>${d ? `${f.hidden ? '🔍 ' : ''}최대 ${d.max}cm <i class="grade g${d.best}">${d.best}</i>` : TIERS[f.tier].name}${f.bait ? ' · ' + baitIcon(f.bait[0]) + ' 전용' : ''}</span></div>`; }).join('')}</div><div id="dexInfo"></div>`;
       B.querySelectorAll('[data-fish]').forEach(c => c.onclick = () => { const f = FISH_BY_ID[c.dataset.fish], d = save.dex[f.id]; $('dexInfo').innerHTML = d ? `<div class="info"><img src="${thumb(f, true)}"><div><b>${f.name}</b> <small>${TIERS[f.tier].name} · ${f.size[0]}~${f.size[1]}cm</small><p>${f.desc}</p><small>잡은 수 ${d.n} · 가장 큰 것 ${d.max}cm · 최고 등급 ${d.best}</small></div></div>` : `<div class="info"><p>아직 못 잡은 물고기예요. ${TIERS[f.tier].name} 등급${f.bait ? ` · ${f.bait.map(b => baitIcon(b) + ' ' + BAIT_BY_ID[b].name).join(', ')}(으)로만 낚여요` : f.tier === 'boss' ? ' · 낚시하다 보면 우연히 나타나요 (황금 미끼·잘 던지기면 더 자주)' : ['r', 'e'].includes(f.tier) ? ' · 좋은 미끼를 써 보세요' : ''}</p></div>`; });
     }
   }
@@ -460,8 +500,9 @@ function drawSheet() {
   }
   else if (sheetKind === 'stage') {
     $('sheetTitle').textContent = '🌊 바다 고르기';
-    B.innerHTML = `<div class="list">${STAGES.map(s => { const lock = s.id > save.unlocked, got = FISH.filter(f => f.stage === s.id && save.dex[f.id]).length, tot = FISH.filter(f => f.stage === s.id).length;
-      return `<div class="item stage ${lock ? 'locked' : ''} ${save.stage === s.id ? 'on' : ''}" style="--a:${s.sea[0]};--b:${s.sky[0]}"><div class="ico">${STAGE_ICON[s.id - 1]}</div><div class="txt"><b>${s.id}. ${s.name}</b><small>${s.desc}</small><small>도감 ${got}/${tot} · 보스 ${save.dex[s.boss] ? '✅ ' + FISH_BY_ID[s.boss].name : '？'}</small></div><div class="how">${lock ? '<span class="tag lock">🔒 앞 바다 보스</span>' : save.stage === s.id ? '<span class="tag">여기 있어요</span>' : `<button class="btn" data-stage="${s.id}">가기</button>`}</div></div>`; }).join('')}</div>`;
+    const pcs = G.mapPieces(save), teaser = !save.hiddenSea && pcs ? `<div class="item stage locked"><div class="ico">🗺️</div><div class="txt"><b>？？？</b><small>지도 조각 ${pcs}/${MAP_STAGES.length} — 조각을 다 모으면 어딘가로 가는 길이 보일 것 같아요.</small></div><div class="how"><span class="tag lock">🔍</span></div></div>` : '';
+    B.innerHTML = `<div class="list">${STAGES.filter(s => !s.hidden || save.hiddenSea).map(s => { const lock = !G.canGo(save, s.id), got = FISH.filter(f => f.stage === s.id && !f.hidden && save.dex[f.id]).length, tot = FISH.filter(f => f.stage === s.id && !f.hidden).length;
+      return `<div class="item stage ${lock ? 'locked' : ''} ${save.stage === s.id ? 'on' : ''}" style="--a:${s.sea[0]};--b:${s.sky[0]}"><div class="ico">${STAGE_ICON[s.id - 1]}</div><div class="txt"><b>${s.id}. ${s.name}</b><small>${s.desc}</small><small>도감 ${got}/${tot} · 보스 ${save.dex[s.boss] ? '✅ ' + FISH_BY_ID[s.boss].name : '？'}${s.hidden ? ' · 🧸 숨은 바다' : ''}</small></div><div class="how">${lock ? '<span class="tag lock">🔒 앞 바다 보스</span>' : save.stage === s.id ? '<span class="tag">여기 있어요</span>' : `<button class="btn" data-stage="${s.id}">가기</button>`}</div></div>`; }).join('')}${teaser}</div>`;
     B.querySelectorAll('[data-stage]').forEach(b => b.onclick = () => { save.stage = +b.dataset.stage; persist(); snd.stage(save.stage); closeSheet(); say(`🌊 ${stage().name}`, 'good'); });
   }
   else if (sheetKind === 'title') {
@@ -471,6 +512,21 @@ function drawSheet() {
       <p class="small">칭호는 하나만 달 수 있고, 단 칭호의 효과만 능력치에 들어가요.</p><div class="list">${TITLES.map(t => { const got = save.titles[t.id], on = save.title === t.id, [h, n] = G.titleValue(save, t.cond);
       return `<div class="item ${got ? '' : 'locked'} ${on ? 'on' : ''}"><div class="ico">${got ? '🏅' : '🔒'}</div><div class="txt"><b>${t.name}</b><div>${statLine(t.stats)}</div><small>${t.desc}</small>${got ? '' : `<div class="bar"><i style="width:${Math.min(100, h / n * 100)}%"></i></div>`}</div><div class="how">${got ? (on ? '<span class="tag">다는 중</span>' : `<button class="btn" data-title="${t.id}">달기</button>`) : `${Math.min(h, n)}/${n}`}</div></div>`; }).join('')}</div>`;
     B.querySelectorAll('[data-title]').forEach(b => b.onclick = () => { save.title = b.dataset.title; persist(); snd.click(); drawSheet(); });
+  }
+  else if (sheetKind === 'note') {   // 모험 수첩: 편지 · 지도 · 숨은 물고기
+    const [hf, ht] = G.secretCount(save), pcs = G.mapPieces(save), nl = Object.keys(save.letters).length;
+    $('sheetTitle').textContent = `📜 모험 수첩`; tabs([['letters', `편지 ${nl}/${LETTERS.length}`], ['map', `지도 ${pcs}/${MAP_STAGES.length}`], ['secret', `숨은 물고기 ${hf}/${ht}`]]);
+    if (sheetTab === 'map') {
+      B.innerHTML = `<div class="mapBox">${MAP_STAGES.map(st => `<div class="mapPiece ${save.map[st] ? 'got' : ''}">${save.map[st] ? `<b>${STAGE_ICON[st - 1]}</b><small>${STAGES[st - 1].name}</small>` : '<b>？</b>'}</div>`).join('')}</div>
+        <p class="small">${save.hiddenSea ? '🧸 지도를 다 맞췄어요. 「장난감 상자 바다」로 가는 길이 열렸어요!' : '지도 조각은 유리병에 담겨 떠다녀요. 어느 바다의 주인을 이겨야 그 바다에서 조각이 떠내려온대요.'}</p>`;
+    } else if (sheetTab === 'secret') {
+      B.innerHTML = `<p class="small">숨은 물고기는 도감에 칸이 없어요. 특별한 조건을 채워야만 가끔 물어요. 힌트는 그 바다에서 건진 유리병 편지에.</p><div class="grid dex">${FISH.filter(f => f.hidden).map(f => { const d = save.dex[f.id], hint = LETTERS.find(l => l.fish === f.id), hr = hint && save.letters[hint.id];
+        return `<div class="cell ${d ? 't-secret' : 'unk'}"><img src="${thumb(f, !!d)}"><b>${d ? f.name : '？？？'}</b><span>${STAGE_ICON[f.stage - 1]} ${STAGES[f.stage - 1].name}${d ? '' : hr ? ' · 📜 힌트 있음' : ''}</span></div>`; }).join('')}</div>`;
+    } else {
+      B.innerHTML = `<div class="list">${LETTERS.map(l => { const got = save.letters[l.id];
+        return `<div class="item ${got ? '' : 'locked'}"><div class="ico">${got ? (l.kind === 'hint' ? '🔍' : '📜') : '✉️'}</div><div class="txt"><b>${got ? l.title : '아직 못 건진 편지'}</b><small>${got ? l.text : l.kind === 'hint' ? `${STAGES[l.stage - 1].name} 어딘가에 떠다니는 것 같아요` : '어느 바다에서든 떠내려올지도 몰라요'}</small></div></div>`; }).join('')}</div>
+        <p class="small">유리병은 낚시하다 가끔 물고기 대신 올라와요. 유리병을 건져도 미끼는 그대로예요.</p>`;
+    }
   }
   else if (sheetKind === 'bait') {
     $('sheetTitle').textContent = '🪱 미끼 고르기';
@@ -494,7 +550,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape') { if (!$('result').hidden) closeResult(); else if (!$('sheet').hidden) closeSheet(); else cancelCast(); return; }
   if (e.code === 'KeyX' && $('sheet').hidden && $('intro').hidden) { cancelCast(); return; }
   if (!$('intro').hidden || !$('result').hidden) return;
-  const k = { KeyB: 'bag', KeyS: 'shop', KeyD: 'dex', KeyC: 'dress', KeyT: 'title' }[e.code]; if (k) { if (sheetKind === k) closeSheet(); else openSheet(k); }
+  const k = { KeyB: 'bag', KeyS: 'shop', KeyD: 'dex', KeyC: 'dress', KeyT: 'title', KeyN: 'note' }[e.code]; if (k) { if (sheetKind === k) closeSheet(); else openSheet(k); }
 });
 document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => openSheet(b.dataset.open));
 $('btnStage').onclick = () => openSheet('stage'); $('lvPill').onclick = () => openSheet('title'); $('btnBait').onclick = () => openSheet('bait');

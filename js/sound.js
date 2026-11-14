@@ -49,7 +49,7 @@ export function createSound() {
       [[0, 74, 16]], [[0, 74, 8]]] },
   ];
   const BARS = []; for (const s of SEC) s.ch.forEach((c, i) => BARS.push({ s, c, i, lead: s.lead[i] || [], first: i === 0 }));
-  const KEY = { 1: 0, 2: 2, 3: -2, 4: -3, 5: 1, 6: -4, 7: 3, 8: 5 };
+  const KEY = { 1: 0, 2: 2, 3: -2, 4: -3, 5: 1, 6: -4, 7: 3, 8: 5, 9: 7 };
   const mf = m => 440 * Math.pow(2, (m - 69) / 12);
   let delay = null;
   function bus() {   // 리드용 메아리 (가벼운 딜레이)

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>토이피쉬 — 장난감 바다 낚시</title>
-<meta name="description" content="장난감 낚시꾼이 장난감 물고기를 타이밍 맞춰 눌러서 낚는 2D 낚시 게임. 여덟 바다, 물고기 112종, 도감과 장비 모으기.">
+<meta name="description" content="장난감 낚시꾼이 장난감 물고기를 타이밍 맞춰 눌러서 낚는 2D 낚시 게임. 여덟 바다와 숨은 바다, 숨은 물고기, 유리병 편지.">
 <link rel="stylesheet" href="css/style.css?v=__V__">
 <link href="https://cdn.jsdelivr.net/gh/quiple/galmuri@v2.40.3/dist/galmuri.css" rel="stylesheet">
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/","./js/toy3d.js":"./js/toy3d.js?v=__V__","./js/main.js":"./js/main.js?v=__V__","./js/data.js":"./js/data.js?v=__V__","./js/game.js":"./js/game.js?v=__V__","./js/draw.js":"./js/draw.js?v=__V__","./js/sound.js":"./js/sound.js?v=__V__"}}</script>
@@ -23,6 +23,7 @@
     <button class="tool" data-open="bag" title="가방 (B)"><img src="assets/input/keyboard_b.png" alt="B">🎒<b>가방</b></button>
     <button class="tool" data-open="shop" title="상점 (S)"><img src="assets/input/keyboard_s.png" alt="S">🏪<b>상점</b></button>
     <button class="tool" data-open="dex" title="도감 (D)"><img src="assets/input/keyboard_d.png" alt="D">📖<b>도감</b></button>
+    <button class="tool" data-open="note" title="모험 수첩 (N)"><img src="assets/input/keyboard_n.png" alt="N">📜<b>수첩</b></button>
     <button class="tool" data-open="dress" title="꾸미기·장비 (C)"><img src="assets/input/keyboard_c.png" alt="C">👕<b>꾸미기</b></button>
     <button class="tool" id="btnHap" title="진동 켜기/끄기">📳</button>
     <button class="tool" id="btnSound" title="소리">🔊</button>
@@ -71,7 +72,7 @@
         <div><b>3. 타이밍</b><span>물고기가 동그라미 위에 올 때 누르기. 가운데일수록 세게, 금빛은 두 배!</span></div>
         <div><b>4. 보스</b><span>보스는 낚시하다가 <b>우연히</b> 나타나요. 미끼마다 확률이 달라요. 빈 곳을 누르면 줄이 상해요(하트)</span></div>
       </div>
-      <p class="small">좋은 낚싯대는 힘, 줄은 하트·시간, 찌는 물고기를 느리게·과녁을 넓게 해요. '멀리 던지기'는 던지기 막대의 가운데 구간을 넓혀요. 어떤 물고기는 정해진 미끼로만 낚여요.</p>
+      <p class="small">🔍 바다 어딘가엔 도감에도 없는 <b>숨은 물고기</b>와 <b>숨은 바다</b>가 있대요. 가끔 올라오는 유리병 편지를 모아 보세요(📜 수첩 · N). 좋은 낚싯대는 힘, 줄은 하트·시간, 찌는 물고기를 느리게·과녁을 넓게 해요. '멀리 던지기'는 던지기 막대의 가운데 구간을 넓혀요. 어떤 물고기는 정해진 미끼로만 낚여요.</p>
       <p class="credit">만든 사람: 심심풀이 · 캐릭터·키 그림 Kenney (CC0) · 3D three.js (MIT) · 글꼴 갈무리 (OFL)</p>
     </div>
   </section>

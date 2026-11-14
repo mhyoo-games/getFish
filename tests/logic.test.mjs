@@ -107,8 +107,40 @@ console.log('cast ok');
   assert.ok(r.exp > 400 && r.levelUps.length >= 2, '보스 S 등급이면 레벨이 여러 번 올라요 ' + r.exp);
   assert.ok(sv.titles.t_boss1 && r.titles.some(t => t.id === 't_boss1'), '보스 칭호');
   const powBefore = G.stats(sv).pow; sv.title = 't_boss1'; assert.equal(G.stats(sv).pow, powBefore + 1, '단 칭호 효과');
-  assert.ok(G.TITLES.some(t => t.cond.dex === G.FISH.length), '도감 전부 칭호는 물고기 수와 같아요');
+  assert.ok(G.TITLES.some(t => t.cond.dex === G.FISH.filter(f => !f.hidden).length), '도감 전부 칭호는 (숨은 물고기 뺀) 물고기 수와 같아요');
   let total = 0; for (let l = 1; l < G.LEVEL.max; l++) total += G.LEVEL.need(l); assert.ok(total > 100000, '만렙까지 충분히 길어요 ' + total);
   for (const t of G.TITLES) assert.ok(Object.keys(t.cond).length === 1, t.name);
   assert.equal(G.fixSave({ title: 'nope' }).title, 't_new'); }
 console.log('level ok');
+// 숨은 물고기 · 유리병 편지 · 숨은 바다
+{ const H = id => G.FISH_BY_ID[id];
+  const sv = G.newSave(), st = G.stats(sv), perf = G.castResult(0.5, st), bad = G.castResult(0.02, st);
+  const seen = (stage, bait, ctx, n = 3000) => { let k = 0; for (let i = 0; i < n; i++) if (G.rollFish(stage, bait, 0, rnd, 0, 0, ctx).hidden) k++; return k / n; };
+  assert.equal(seen(1, 'bait1', null), 0, '조건 정보가 없으면 숨은 물고기는 안 나와요');
+  assert.equal(seen(1, 'bait1', { eq: sv.eq, cast: bad }), 0, '처음 장비라도 PERFECT가 아니면 안 나와요');
+  const p1 = seen(1, 'bait1', { eq: sv.eq, cast: perf }); assert.ok(p1 > 0.25 && p1 < 0.45, '처음 모습 + PERFECT면 태엽 붕어 ' + p1);
+  assert.ok(G.secretOk(H('r15').secret, { bait: 'bait3', perfectRun: 3 }) && !G.secretOk(H('r15').secret, { bait: 'bait3', perfectRun: 2 }));
+  assert.ok(G.secretOk(H('f15').secret, { hour: 2 }) && !G.secretOk(H('f15').secret, { hour: 12 }));
+  assert.ok(G.secretOk(H('d15').secret, { bait: 'bait0' }));
+  assert.ok(G.secretOk(H('v15').secret, { cancels: 3, cast: perf }) && !G.secretOk(H('v15').secret, { cancels: 2, cast: perf }));
+  assert.ok(G.secretOk(H('s15').secret, { lightning: true }) && !G.secretOk(H('s15').secret, {}));
+  assert.ok(G.secretOk(H('a15').secret, { eq: { ...sv.eq, hat: 'hat9' } }) && !G.secretOk(H('a15').secret, { eq: sv.eq }));
+  assert.ok(G.secretOk(H('k15').secret, { bait: 'bait9', cast: perf }));
+  for (const f of G.FISH.filter(f => f.hidden)) { assert.ok(f.secret, f.name); assert.ok(G.LETTERS.some(l => l.fish === f.id && l.stage === f.stage), f.name + ' 힌트 편지'); }
+  assert.equal(G.dexCount(sv)[1], G.FISH.filter(f => !f.hidden).length, '도감 수에는 숨은 물고기가 없어요');
+  // 유리병: 편지는 겹치지 않고, 지도는 그 바다 보스를 잡은 뒤에만
+  const s2 = G.newSave(); s2.unlocked = 8; let letters = 0, maps = 0;
+  for (let i = 0; i < 4000; i++) { const b = G.rollBottle(s2, 5, rnd); if (!b) continue; if (b.kind === 'map') maps++; const r = G.openBottle(s2, b); if (b.kind === 'letter') letters++; }
+  assert.equal(maps, 0, '보스 전에는 지도 조각이 안 나와요'); assert.ok(letters >= 9 && s2.letters.h5 && s2.letters.l8, '이야기 편지와 그 바다 힌트');
+  assert.ok(!Object.keys(s2.letters).some(id => G.LETTER_BY_ID[id].kind === 'hint' && G.LETTER_BY_ID[id].stage !== 5), '힌트는 그 바다에서만');
+  for (const id of ['v13', 's13', 'a13', 'k13']) s2.dex[id] = { n: 1, max: 1, best: 'C' };
+  let opened = null; for (const stg of [5, 6, 7, 8]) for (let i = 0; i < 400 && !s2.map[stg]; i++) { const b = G.rollBottle(s2, stg, rnd); if (b && b.kind === 'map') { const r = G.openBottle(s2, b); if (r.opened) opened = r.opened; } }
+  assert.equal(G.mapPieces(s2), 4); assert.equal(opened, 9); assert.ok(s2.hiddenSea && G.canGo(s2, 9));
+  // 숨은 바다는 8번째 보스로 열리지 않아요
+  const s3 = G.newSave(); s3.unlocked = 8; G.onCatch(s3, G.FISH_BY_ID.k13, { size: 600, grade: G.GRADE_BY.C }, G.stats(s3), rnd); assert.equal(s3.unlocked, 8); assert.ok(!G.canGo(s3, 9));
+  assert.equal(G.fixSave({ stage: 9, unlocked: 8 }).stage, 8, '지도 없이 숨은 바다 저장은 고쳐요'); assert.equal(G.fixSave({ stage: 9, unlocked: 8, hiddenSea: 1 }).stage, 9);
+  // 숨은 바다 보스: 용왕 장비로는 어렵고 태엽 낚싯대면 해볼 만
+  const g17 = gearSave({ rod: 'rod17', line: 'line8', float: 'float8' }, 48), g18 = gearSave({ rod: 'rod18', line: 'line8', float: 'float8' }, 50);
+  const c9 = play(g17, 't01'), bA = play(g17, 't13'), bB = play(g18, 't13'); console.log(`  숨은 바다: 흔한 ${c9.toFixed(2)} · 보스(용왕 장비) ${bA.toFixed(2)} · 보스(태엽 낚싯대) ${bB.toFixed(2)}`);
+  assert.ok(c9 > 0.85 && bA > 0.2 && bB > bA); }
+console.log('hidden ok');

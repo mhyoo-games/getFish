@@ -83,6 +83,7 @@ export async function createToy(base = 'assets/chars/') {
       for (const s of [-1, 1]) { const h = cyl(0.02, 0.07, 0.42, 5, '#F4E8C8'); h.position.set(s * 0.26, 0.38, -0.05); h.rotation.z = -s * 0.35; h.rotation.x = -0.3; g.add(h); }
       const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), M('#5AF2C8', { emissive: col('#1A8A70') })); gem.position.set(0, 0.12, 0.42); g.add(gem);
     }
+    else if (id === 'hat11') { const ring = cyl(0.36, 0.36, 0.16, 8, c, { roughness: 0.35 }); ring.position.y = 0.08; g.add(ring); const cols = ['#F2C23A', '#5AC2F2', '#8AD26A', '#F2545A']; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU, b = box(0.12, 0.12, 0.12, cols[i % 4], { roughness: 0.35 }); b.position.set(Math.cos(a) * 0.32, 0.24, Math.sin(a) * 0.32); b.rotation.y = -a; g.add(b); } }
     return g;
   }
   function accMesh(id, c) {
@@ -93,6 +94,7 @@ export async function createToy(base = 'assets/chars/') {
     if (id === 'acc4') { const ch = box(0.02, 0.18, 0.02, '#C8C8D2'); ch.position.y = 0.06; g.add(ch); const p = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), M(c, { emissive: col(c).multiplyScalar(0.6) })); p.position.y = -0.06; g.add(p); g.position.set(0, -0.02, 0.24); return { obj: g, at: 'chest' }; }
     if (id === 'acc5') { const f = toyFishMesh({ id: 'plush', look: { shape: 'fish', c1: '#7AC2F2', c2: '#E8F6FF', c3: '#F2A24A', pat: 'none' } }); f.scale.setScalar(0.42); f.rotation.set(0, Math.PI / 2, 0.2); f.position.set(0.05, 0.05, -0.32); g.add(f); return { obj: g, at: 'chest' }; }
     if (id === 'acc7') { const sc = box(0.72, 0.14, 0.12, c); sc.position.set(0, 0.0, 0.02); g.add(sc); const tail = box(0.14, 0.3, 0.06, c); tail.position.set(0.2, -0.16, 0.2); tail.rotation.z = 0.2; g.add(tail); return { obj: g, at: 'neck' }; }
+    if (id === 'acc9') { const m = M(c, { metalness: 0.6, roughness: 0.3 }); const st = cyl(0.03, 0.03, 0.3, 6, m); st.rotation.x = Math.PI / 2; st.position.set(0, 0.0, -0.32); g.add(st); for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.03, 4, 8), m); w.position.set(sx * 0.11, 0.0, -0.48); g.add(w); } return { obj: g, at: 'chest' }; }
     if (id === 'acc8') { const o = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 5, 10), M(c, { metalness: 0.6, roughness: 0.3, emissive: col(c).multiplyScalar(0.3) })); o.position.set(0, -0.02, 0.24); g.add(o); const pearl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.06, 1), M('#FFFFFF', { roughness: 0.2, emissive: col('#606060') })); pearl.position.set(0, -0.02, 0.26); g.add(pearl); return { obj: g, at: 'chest' }; }
     return null;
   }
@@ -227,6 +229,7 @@ export function toyFishMesh(f) {
     shark: u => [0.3 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.8) + 0.04, 0.24 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.7) + 0.03],
     angler: u => [0.6 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.6)), 0.6) + 0.05, 0.5 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.6)), 0.6) + 0.04],
     cat: u => [0.26 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.6)), 0.7) + 0.05, 0.3 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.6)), 0.6) + 0.04],
+    whale: u => [0.42 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.62)), 0.6) + 0.06, 0.36 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.62)), 0.6) + 0.05],
     sword: u => [0.32 * Math.pow(Math.sin(Math.PI * Math.pow(u, 0.8)), 0.8) + 0.04, 0.16 * Math.sin(Math.PI * u) + 0.03],
   };
   const pattern = (v, i) => {   // 면 가운데 v → 색
@@ -267,15 +270,17 @@ export function toyFishMesh(f) {
     const hAt = u => prof(u)[0], dAt = u => prof(u)[1];
     eyeX = sh === 'angler' ? 0.28 : sh === 'cat' ? 0.38 : sh === 'round' ? 0.3 : 0.34; eyeY = sh === 'cat' ? hAt(0.88) * 0.25 : hAt(0.84) * 0.18; eyeZ = dAt(eyeX + 0.5) * 0.5 + 0.012; er = Math.max(0.06, Math.min(0.1, hAt(0.84) * 0.32));
     headTop = hAt(0.8) / 2;
-    if (sh !== 'long') tail(-0.48, sh === 'tall' ? 0.5 : sh === 'round' ? 0.34 : 0.42, sh === 'shark' ? 'shark' : sh === 'round' || sh === 'angler' ? 'round' : 'fork');
+    if (sh === 'whale') { for (const z of [-1, 1]) { const fl = new THREE.Mesh(finGeo([[0, 0], [-0.22, 0.08], [-0.32, 0.26], [-0.08, 0.06]], 0.04), finMat); fl.rotation.x = Math.PI / 2 * z; fl.position.set(-0.46, 0, 0); G.add(fl); } }
+    else if (sh !== 'long') tail(-0.48, sh === 'tall' ? 0.5 : sh === 'round' ? 0.34 : 0.42, sh === 'shark' ? 'shark' : sh === 'round' || sh === 'angler' ? 'round' : 'fork');
     else { const t = tail(-0.49, 0.12, 'round'); t.scale.set(0.6, 1, 1); }
     // 등지느러미
     if (sh === 'shark') { const d = new THREE.Mesh(finGeo([[0.1, 0], [-0.05, 0.26], [-0.12, 0.24], [-0.1, 0]], 0.03), darkFin); d.position.set(0.02, hAt(0.52) / 2 - 0.02, 0); G.add(d); }
     else if (sh === 'long') { const d = dorsal(-0.05, 0.8, 0.05); d.position.y = hAt(0.45) / 2 - 0.01; G.add(d); }
     else if (lk.spiky || lk.frill) { for (let k = 0; k < 6; k++) { const x = 0.15 - k * 0.08, s = new THREE.Mesh(new THREE.ConeGeometry(0.018, lk.frill ? 0.32 : 0.16, 4), finMat); s.position.set(x, hAt(x + 0.5) / 2 + (lk.frill ? 0.12 : 0.06), 0); s.rotation.z = 0.35; G.add(s); } }
+    else if (sh === 'whale') { const d = dorsal(-0.18, 0.14, 0.06); d.position.y = hAt(0.32) / 2 - 0.01; G.add(d); const sp = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.04, 0.03), white); sp.position.set(0.22, hAt(0.72) / 2 + 0.02, 0); G.add(sp); }
     else if (sh !== 'round') { const d = dorsal(-0.02, 0.42, sh === 'tall' ? 0.2 : 0.14); d.position.y = hAt(0.48) / 2 - 0.02; G.add(d); }
     // 배지느러미 · 가슴지느러미
-    if (!['round', 'long'].includes(sh)) { const v = dorsal(-0.12, 0.2, sh === 'tall' ? 0.14 : 0.08); v.rotation.x = Math.PI; v.position.y = -hAt(0.38) / 2 + 0.02; G.add(v); }
+    if (!['round', 'long', 'whale'].includes(sh)) { const v = dorsal(-0.12, 0.2, sh === 'tall' ? 0.14 : 0.08); v.rotation.x = Math.PI; v.position.y = -hAt(0.38) / 2 + 0.02; G.add(v); }
     for (const s of [-1, 1]) { const p = new THREE.Mesh(finGeo([[0, 0], [-0.14, 0.05], [-0.12, -0.05]], 0.02), finMat); p.position.set(eyeX - 0.12, -hAt(0.75) * 0.15, s * (dAt(0.72) / 2 + 0.01)); p.rotation.y = s * 0.4; G.add(p); }
     if (sh === 'round' && lk.spiky) for (let k = 0; k < 26; k++) { const a = R() * TAU, b = (R() - 0.5) * 2.4, x = (R() - 0.5) * 0.6; const s = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.09, 4), solid(lk.c3)); const ny = Math.cos(b), nz = Math.sin(b); s.position.set(x, ny * hAt(x + 0.5) / 2, nz * dAt(x + 0.5) / 2); s.lookAt(s.position.clone().multiplyScalar(2)); s.rotateX(Math.PI / 2); G.add(s); }
     if (sh === 'sword') { const bill = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.5, 4), solid(lk.c1)); bill.rotation.z = -Math.PI / 2; bill.position.set(0.72, 0.02, 0); G.add(bill); L = 1.3; const d = new THREE.Mesh(finGeo([[0.25, 0], [0.15, 0.3], [-0.2, 0.06], [-0.2, 0]], 0.025), finMat); d.position.y = hAt(0.6) / 2 - 0.02; G.add(d); }
@@ -294,6 +299,13 @@ export function toyFishMesh(f) {
     G.add(new THREE.Mesh(geo, bodyMat));
     const tl = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.02, 0.02), solid(lk.c1)); tl.position.set(-0.6, 0, 0); G.add(tl);
     addEyes(0.18, 0.05, 0.08, 0.05); eyeX = null; L = 1.1;
+  } else if (sh === 'duck') {   // 고무 오리 (장난감)
+    const bm = solid(lk.c1, { roughness: 0.35 }), body = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.34, 0.4, 3, 2, 2), bm); body.position.set(-0.04, -0.06, 0); G.add(body);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.26), bm); tl.position.set(-0.36, 0.06, 0); tl.rotation.z = 0.5; G.add(tl);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), bm); head.position.set(0.2, 0.24, 0); G.add(head);
+    const bk = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.18), solid(lk.c3, { roughness: 0.35 })); bk.position.set(0.4, 0.2, 0); G.add(bk);
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.04), solid(new THREE.Color(lk.c1).multiplyScalar(0.9).getStyle())); for (const z of [-1, 1]) { const w = wing.clone(); w.position.set(-0.08, -0.02, z * 0.21); G.add(w); }
+    eyeX = 0.27; eyeY = 0.3; eyeZ = 0.152; er = 0.07; L = 0.9;
   } else if (sh === 'squid') {
     const m = new THREE.Mesh(paintFaces(new THREE.ConeGeometry(0.16, 0.6, 7, 3).toNonIndexed(), (v, i) => (rng(f.id + i)() < 0.2 && lk.pat !== 'clear' ? c3 : v.y > 0 ? c1 : c1.clone().lerp(c2, 0.4))), bodyMat);
     m.rotation.z = Math.PI / 2; m.position.x = -0.18; G.add(m);
@@ -334,12 +346,22 @@ export function toyFishMesh(f) {
 // 보스는 더 웅장하게: 금 왕관 · 빛나는 눈 · 등의 가시
 function finish(G, f, L) {
   const lk = f.look;
+  if (lk.windup || lk.periscope) {   // 장난감 부품: 등에 꽂힌 태엽 열쇠 · 잠망경
+    const box0 = new THREE.Box3().setFromObject(G), top = box0.max.y, cx = (box0.min.x + box0.max.x) / 2;
+    const metal = new THREE.MeshStandardMaterial({ color: new THREE.Color(lk.windup ? '#F2C23A' : '#8A94A8'), metalness: 0.6, roughness: 0.3, flatShading: true });
+    if (lk.windup) { const k = new THREE.Group(); const st = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.12, 6), metal); st.position.y = 0.06; k.add(st);
+      for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.016, 4, 8), metal); w.position.set(sx * 0.05, 0.15, 0); k.add(w); }
+      k.position.set(cx - 0.05, top - 0.03, 0); G.add(k); }
+    if (lk.periscope) { const a = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.18, 0.035), metal); a.position.set(cx + 0.05, top + 0.06, 0); G.add(a); const b = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.035, 0.035), metal); b.position.set(cx + 0.08, top + 0.15, 0); G.add(b);
+      const gl = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.025, 0.025), new THREE.MeshStandardMaterial({ color: '#9AE2FF', emissive: '#3A8AA8' })); gl.position.set(cx + 0.125, top + 0.15, 0); G.add(gl);
+      for (const z of [-1, 1]) { const pr = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 6), metal); pr.rotation.z = Math.PI / 2; pr.position.set(box0.min.x - 0.01, 0, 0); G.add(pr); } }
+  }
   if (f.tier === 'boss') {
     const gold = new THREE.MeshStandardMaterial({ color: new THREE.Color('#F2C23A'), metalness: 0.6, roughness: 0.3, emissive: new THREE.Color('#6A4A00'), flatShading: true });
     const cr = new THREE.Group(); const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.11, 0.06, 6), gold); cr.add(ring);
     for (let i = 0; i < 6; i++) { const a = i / 6 * TAU, s = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.09, 4), gold); s.position.set(Math.cos(a) * 0.09, 0.07, Math.sin(a) * 0.09); cr.add(s); }
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.03, 0), new THREE.MeshStandardMaterial({ color: '#E8304A', emissive: '#801020', flatShading: true })); gem.position.set(0.1, 0.0, 0); cr.add(gem);
-    const pos = { crab: [0, 0.22, 0.05], flat: [0.2, 0.1, 0], jelly: [0, 0.4, 0], squid: [-0.45, 0.06, 0], horse: [0.04, 0.44, 0] }[lk.shape] || [0.3, 0.22 + (lk.shape === 'round' ? 0.12 : lk.shape === 'angler' ? 0.14 : lk.shape === 'tall' ? 0.14 : 0), 0];
+    const pos = { crab: [0, 0.22, 0.05], flat: [0.2, 0.1, 0], jelly: [0, 0.4, 0], squid: [-0.45, 0.06, 0], horse: [0.04, 0.44, 0], whale: [0.25, 0.26, 0] }[lk.shape] || [0.3, 0.22 + (lk.shape === 'round' ? 0.12 : lk.shape === 'angler' ? 0.14 : lk.shape === 'tall' ? 0.14 : 0), 0];
     cr.position.set(...pos); cr.rotation.z = -0.25; cr.scale.setScalar(1.3); G.add(cr);
   }
   // 크기를 1(몸길이)에 맞춤

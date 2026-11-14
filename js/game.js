@@ -1,5 +1,6 @@
 // 토이피쉬 규칙 (화면과 상관없는 순수 계산) — tests/logic.test.mjs 에서 그대로 불러 검사해요.
-import { STAGES, TIERS, GRADES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, DROPS, SETS, START, BAG_MAX, LEVEL, TITLES } from './data.js';
+import { STAGES, TIERS, GRADES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, DROPS, SETS, START, BAG_MAX, LEVEL, TITLES, LETTERS, LETTER_BY_ID, BOTTLE, MAP_STAGES } from './data.js';
+export const NORMAL_STAGES = STAGES.filter(s => !s.hidden).length;   // 보스를 잡아 차례로 여는 바다 수 (숨은 바다 제외)
 
 export const SAVE_KEY = 'getfish_save_v1';
 export const EQ_SLOTS = ['rod', 'line', 'float', 'hat', 'outfit', 'acc'];
@@ -7,7 +8,7 @@ export const EQ_SLOTS = ['rod', 'line', 'float', 'hat', 'outfit', 'acc'];
 // ---------------------------------------------------------------- 저장
 export function newSave() {
   return { v: 2, coins: START.coins, items: { ...START.items }, eq: { ...START.eq }, gender: null, stage: 1, unlocked: 1,
-    dex: {}, sets: {}, bag: [], stats: { casts: 0, caught: 0, escaped: 0, bosses: 0, coinsEarned: 0, nice: 0, perfect: 0 }, seen: {}, lv: 1, exp: 0, titles: { t_new: 1 }, title: 't_new', calm: 0 };
+    dex: {}, sets: {}, bag: [], stats: { casts: 0, caught: 0, escaped: 0, bosses: 0, coinsEarned: 0, nice: 0, perfect: 0 }, seen: {}, lv: 1, exp: 0, titles: { t_new: 1 }, title: 't_new', calm: 0, letters: {}, map: {}, hiddenSea: 0, run: { perfect: 0, cancel: 0 } };
 }
 export function fixSave(s) {
   const d = newSave(); if (!s || typeof s !== 'object') return d;
@@ -17,9 +18,13 @@ export function fixSave(s) {
   o.titles = { t_new: 1, ...(s.titles || {}) }; if (!TITLE_BY_ID[o.title] || !o.titles[o.title]) o.title = 't_new'; o.lv = Math.max(1, Math.min(LEVEL.max, o.lv | 0)); o.exp = Math.max(0, +o.exp || 0);
   if (o.gender !== 'm' && o.gender !== 'f') o.gender = null;   // 예전(동물) 저장은 처음에 남자·여자를 다시 골라요
   delete o.animal; o.calm = Math.max(0, +o.calm || 0); o.v = 2;
-  o.bag = (o.bag || []).filter(b => FISH_BY_ID[b.id]); o.unlocked = Math.max(1, Math.min(STAGES.length, o.unlocked | 0)); o.stage = Math.max(1, Math.min(o.unlocked, o.stage | 0));
+  o.letters = { ...(s.letters || {}) }; o.map = { ...(s.map || {}) }; o.hiddenSea = o.hiddenSea ? 1 : 0; o.run = { perfect: 0, cancel: 0, ...(s.run || {}) };
+  o.bag = (o.bag || []).filter(b => FISH_BY_ID[b.id]); o.unlocked = Math.max(1, Math.min(NORMAL_STAGES, o.unlocked | 0));
+  o.stage = canGo(o, o.stage | 0) ? o.stage | 0 : Math.max(1, Math.min(o.unlocked, o.stage | 0));
   return o;
 }
+/** 그 바다에 갈 수 있는지 (숨은 바다는 지도를 다 모았을 때만) */
+export function canGo(save, id) { const st = STAGES[id - 1]; if (!st) return false; return st.hidden ? !!save.hiddenSea : id <= save.unlocked; }
 
 // ---------------------------------------------------------------- 능력치
 export function stats(save) {
@@ -57,17 +62,56 @@ export function bossChance(baitId, st, cast = null, calm = 0) {
 
 // ---------------------------------------------------------------- 물고기 뽑기
 /** 이 바다에서 어떤 물고기가 물지. rnd: 0~1 난수 함수 */
-export function rollFish(stage, baitId, luck, rnd = Math.random, cast = 0, boss = 0) {
+export function rollFish(stage, baitId, luck, rnd = Math.random, cast = 0, boss = 0, ctx = null) {
   const bait = BAIT_BY_ID[baitId] || BAITS[0];
   if (boss > 0 && rnd() < boss) return FISH_BY_ID[STAGES[stage - 1].boss];
+  // 숨은 물고기: 조건을 채우면 가끔 (조건은 유리병 편지의 힌트)
+  if (ctx) for (const f of FISH) if (f.hidden && f.stage === stage && secretOk(f.secret, { ...ctx, bait: bait.id }) && rnd() < SECRET_CHANCE) return f;
   // 정해진 미끼로만 낚이는 물고기는 그 미끼일 때만
-  const pool = FISH.filter(f => f.stage === stage && f.tier !== 'boss' && (!f.bait || f.bait.includes(bait.id)));
+  const pool = FISH.filter(f => f.stage === stage && f.tier !== 'boss' && !f.hidden && (!f.bait || f.bait.includes(bait.id)));
   const castK = { c: 0, u: 0.5, r: 1, e: 1.5 };   // 멀리 던질수록 드문 물고기 쪽으로
   const ws = pool.map(f => TIERS[f.tier].w * (bait.w[f.tier] ?? 1) * (f.tier === 'c' ? 1 : 1 + luck * 2) * (1 + cast * castK[f.tier]));
   let r = rnd() * ws.reduce((a, b) => a + b, 0);
   for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) return pool[i]; }
   return pool[pool.length - 1];
 }
+export const SECRET_CHANCE = 0.35;
+/** 숨은 물고기 조건. ctx: { eq, bait, cast(castResult), perfectRun, cancels, hour, lightning } */
+export function secretOk(sec, ctx) {
+  if (!sec) return false;
+  if (sec.gear && !Object.entries(sec.gear).every(([k, v]) => ctx.eq && ctx.eq[k] === v)) return false;
+  if (sec.wearAny && !sec.wearAny.some(id => ctx.eq && Object.values(ctx.eq).includes(id))) return false;
+  if (sec.bait && ctx.bait !== sec.bait) return false;
+  if (sec.perfect && !(ctx.cast && ctx.cast.perfect)) return false;
+  if (sec.perfectRun && (ctx.perfectRun || 0) < sec.perfectRun) return false;
+  if (sec.cancels && (ctx.cancels || 0) < sec.cancels) return false;
+  if (sec.hours) { const h = ctx.hour ?? -1, [a, b] = sec.hours; if (!(a <= b ? h >= a && h < b : h >= a || h < b)) return false; }
+  if (sec.lightning && !ctx.lightning) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------- 유리병 편지 · 지도
+/** 물고기 대신 유리병이 올라올지. 올라오면 무엇이 들었는지 정해요 (아직 save는 안 바꿔요) */
+export function rollBottle(save, stage, rnd = Math.random) {
+  const needMap = MAP_STAGES.includes(stage) && !save.map[stage] && save.dex[STAGES[stage - 1].boss];
+  if (rnd() >= (needMap ? BOTTLE.mapChance : BOTTLE.chance)) return null;
+  if (needMap) return { kind: 'map', stage };
+  const hint = LETTERS.find(l => l.kind === 'hint' && l.stage === stage && !save.letters[l.id] && !save.dex[l.fish]);
+  const story = LETTERS.find(l => l.kind === 'story' && !save.letters[l.id]);
+  const l = hint && (!story || rnd() < 0.6) ? hint : story || hint;
+  return l ? { kind: 'letter', id: l.id } : { kind: 'coins', n: 200 + stage * 150 };
+}
+/** 유리병 열기 → 편지 기록 · 지도 조각 · 동전. 지도를 다 모으면 숨은 바다가 열려요 */
+export function openBottle(save, b) {
+  const res = { ...b };
+  if (b.kind === 'letter') save.letters[b.id] = Date.now();
+  if (b.kind === 'coins') { save.coins += b.n; save.stats.coinsEarned += b.n; }
+  if (b.kind === 'map') { save.map[b.stage] = Date.now(); res.pieces = mapPieces(save); if (res.pieces >= MAP_STAGES.length && !save.hiddenSea) { save.hiddenSea = 1; res.opened = 9; } }
+  res.titles = checkTitles(save);
+  return res;
+}
+export const mapPieces = save => MAP_STAGES.filter(s => save.map[s]).length;
+
 /** 크기와 등급: 행운이 높으면 큰 쪽으로 기울어요 */
 export function rollSize(fish, luck, rnd = Math.random) {
   const p = Math.pow(rnd(), 1 / (1 + luck * 2.5));
@@ -141,7 +185,8 @@ export function onCatch(save, fish, roll, st, rnd = Math.random) {
   const gi = g => GRADES.findIndex(x => x.g === g); if (gi(roll.grade.g) > gi(d.best)) d.best = roll.grade.g;
   save.dex[fish.id] = d; save.stats.caught++;
   if (fish.tier === 'boss') save.calm = 0;
-  if (fish.tier === 'boss') { save.stats.bosses++; if (fish.stage === save.unlocked && save.unlocked < STAGES.length) { save.unlocked++; res.unlocked = save.unlocked; } }
+  if (fish.tier === 'boss') { save.stats.bosses++; if (fish.stage === save.unlocked && save.unlocked < NORMAL_STAGES) { save.unlocked++; res.unlocked = save.unlocked; } }
+  if (fish.hidden) res.secret = true;
   // 가방에 넣기 (꽉 차면 바로 팔아요)
   if (save.bag.length < BAG_MAX) save.bag.push({ id: fish.id, size: roll.size, g: roll.grade.g, t: Date.now() });
   else { save.coins += res.coins; save.stats.coinsEarned += res.coins; res.autoSold = true; }
@@ -192,8 +237,8 @@ export function titleValue(save, c) {
   const k = Object.keys(c)[0], v = c[k], dexN = Object.keys(save.dex).length;
   const have = k === 'level' ? save.lv : k === 'dex' ? dexN : k === 'bosses' ? FISH.filter(f => f.tier === 'boss' && save.dex[f.id]).length
     : k === 'ss' ? Object.values(save.dex).filter(d => d.best === 'SS').length : k === 'caught' ? save.stats.caught : k === 'nice' ? (save.stats.nice || 0) : k === 'perfect' ? (save.stats.perfect || 0)
-    : k === 'special' ? FISH.filter(f => f.bait && save.dex[f.id]).length
-    : k === 'stage' ? (FISH.filter(f => f.stage === v).every(f => save.dex[f.id]) ? 1 : 0) : 0;
+    : k === 'special' ? FISH.filter(f => f.bait && save.dex[f.id]).length : k === 'secret' ? FISH.filter(f => f.hidden && save.dex[f.id]).length : k === 'letters' ? Object.keys(save.letters || {}).length
+    : k === 'stage' ? (FISH.filter(f => f.stage === v && !f.hidden).every(f => save.dex[f.id]) ? 1 : 0) : 0;
   return [have, k === 'stage' ? 1 : v];
 }
 /** 새로 얻은 칭호 목록 */
@@ -232,6 +277,7 @@ export function useBait(save) {
 }
 /** 던졌다가 거둘 때: 물고기가 먹지 않은 미끼는 돌려받아요 */
 export function refundBait(save, id) { if (!id || id === 'bait0') return; give(save, id, 1); if (save.eq.bait === 'bait0') save.eq.bait = id; }
-export function dexCount(save) { return [FISH.filter(f => save.dex[f.id]).length, FISH.length]; }
-export { LEVEL, TITLES };
+export function dexCount(save) { const n = FISH.filter(f => !f.hidden); return [n.filter(f => save.dex[f.id]).length, n.length]; }
+export function secretCount(save) { const h = FISH.filter(f => f.hidden); return [h.filter(f => save.dex[f.id]).length, h.length]; }
+export { LEVEL, TITLES, LETTERS, LETTER_BY_ID, MAP_STAGES };
 export { STAGES, FISH, FISH_BY_ID, ITEMS, ITEM_BY_ID, BAITS, BAIT_BY_ID, SETS, GRADES, TIERS };
